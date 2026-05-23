@@ -777,17 +777,32 @@ let whoData = null;
 //  FETCH 1: CDC NNDSS
 // ════════════════════════════════════════════════════════
 async function fetchCDC() {
-  // Fetch current MMWR year data via the Socrata API.
-  // IMPORTANT: mmwr_year is a NUMERIC field in this dataset.  SoQL numeric
-  // comparisons must NOT use single-quotes (those are for text fields only).
-  // Using mmwr_year='2026' triggers a 400; the correct form is mmwr_year=2026.
-  // We also sort by mmwr_week DESC so the most-recent week is first, and add
-  // a $select to pull only the columns we actually use — keeps the payload lean.
-  const currentYear = new Date().getFullYear();
-  const url = `https://data.cdc.gov/resource/x9gk-5huc.json?$limit=50000&$where=mmwr_year=${currentYear}&$order=mmwr_week+DESC`;
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error(`CDC API ${resp.status}`);
-  return resp.json();
+  const currentYear = String(new Date().getFullYear());
+  const paramsWeek = new URLSearchParams({
+    '$select': 'max(week) as latest_week',
+    '$where': `year='${currentYear}'`
+  });
+  const weekUrl = `https://data.cdc.gov/resource/x9gk-5huc.json?${paramsWeek.toString()}`;
+  const weekResp = await fetch(weekUrl);
+  if (!weekResp.ok) throw new Error(`CDC API ${weekResp.status}`);
+
+  const weekData = await weekResp.json();
+  const latestWeekRaw = weekData?.[0]?.latest_week;
+  const latestWeek = Number.parseInt(latestWeekRaw, 10);
+  if (!Number.isFinite(latestWeek)) {
+    throw new Error(`No CDC week found for year ${currentYear}`);
+  }
+
+  const paramsRows = new URLSearchParams({
+    '$where': `year='${currentYear}' AND week=${latestWeek}`,
+    '$limit': '50000'
+  });
+  const rowsUrl = `https://data.cdc.gov/resource/x9gk-5huc.json?${paramsRows.toString()}`;
+  const rowsResp = await fetch(rowsUrl);
+  if (!rowsResp.ok) throw new Error(`CDC API ${rowsResp.status}`);
+
+  const rows = await rowsResp.json();
+  return { rows, year: currentYear, week: latestWeek, weekUrl, rowsUrl };
 }
 
 // ════════════════════════════════════════════════════════
@@ -820,55 +835,66 @@ async function fetchWHO() {
 // ════════════════════════════════════════════════════════
 //  RENDER: CDC
 // ════════════════════════════════════════════════════════
-function processCDC(records) {
-  // Group by disease keyword match, aggregate across all reporting areas
-  const diseaseMap = {}; // displayName -> {rows, stateRows}
+function processCDC(cdcPayload) {
+  const { rows = [], year = String(new Date().getFullYear()), week = null } = cdcPayload || {};
+  const diseaseMap = {};
+  const aggregateAreas = new Set([
+    'TOTAL', 'U.S. TOTAL', 'UNITED STATES', 'US RESIDENTS', 'US TERRITORIES', 'NON-US RESIDENTS',
+    'NEW ENGLAND', 'MIDDLE ATLANTIC', 'EAST NORTH CENTRAL', 'WEST NORTH CENTRAL', 'SOUTH ATLANTIC',
+    'EAST SOUTH CENTRAL', 'WEST SOUTH CENTRAL', 'MOUNTAIN', 'PACIFIC'
+  ]);
 
-  for (const row of records) {
-    const label = row.label || row.disease || row['label'] || '';
+  for (const row of rows) {
+    const label = row.label || '';
     const match = matchDisease(label);
     if (!match) continue;
+
+    const area = String(row.states || '').trim() || 'Unknown';
+    if (aggregateAreas.has(area.toUpperCase())) continue;
 
     const key = match.display;
     if (!diseaseMap[key]) {
       diseaseMap[key] = {
         display: key,
         currentWeek: 0,
-        ytd2026: 0,
-        ytd2025: 0,
+        ytdCurrent: 0,
+        ytdPrevious: 0,
         max52: 0,
         states: {}
       };
     }
 
     const d = diseaseMap[key];
-    d.currentWeek += num(row.current_week);
-    // YTD fields — try multiple possible field names from Socrata
-    d.ytd2026 += num(
-      row.cumulative_ytd_current_mmwr_year ??
-      row['cumulative_ytd_current_mmwr_year'] ??
-      row.cum_ytd_current_mmwr_yr ?? 0
-    );
-    d.ytd2025 += num(
-      row.cumulative_ytd_previous_mmwr_year ??
-      row['cumulative_ytd_previous_mmwr_year'] ??
-      row.cum_ytd_previous_mmwr_yr ?? 0
-    );
-    d.max52 = Math.max(d.max52, num(row.previous_52_week_max));
+    const current = num(row.m1);
+    const prev52 = num(row.m2);
+    const ytdCurrent = num(row.m3);
+    const ytdPrevious = num(row.m4);
 
-    // State breakdown
-    const area = row.reporting_area || row['reporting area'] || row.state || 'Unknown';
+    d.currentWeek += current;
+    d.ytdCurrent += ytdCurrent;
+    d.ytdPrevious += ytdPrevious;
+    d.max52 = Math.max(d.max52, prev52);
+
     if (!d.states[area]) d.states[area] = { current: 0, ytd: 0 };
-    d.states[area].current += num(row.current_week);
-    d.states[area].ytd += num(row.cumulative_ytd_current_mmwr_year ?? row.cum_ytd_current_mmwr_yr ?? 0);
+    d.states[area].current += current;
+    d.states[area].ytd += ytdCurrent;
   }
 
-  return Object.values(diseaseMap)
-    .filter(d => d.ytd2026 > 0 || d.currentWeek > 0 || d.ytd2025 > 0)
-    .sort((a, b) => b.ytd2026 - a.ytd2026);
+  return {
+    diseases: Object.values(diseaseMap)
+      .filter(d => d.ytdCurrent > 0 || d.currentWeek > 0 || d.ytdPrevious > 0)
+      .sort((a, b) => b.ytdCurrent - a.ytdCurrent),
+    year,
+    prevYear: String(Number(year) - 1),
+    week
+  };
 }
 
-function renderCDC(diseases) {
+function renderCDC(cdcData) {
+  const diseases = cdcData?.diseases || [];
+  const year = cdcData?.year || String(new Date().getFullYear());
+  const prevYear = cdcData?.prevYear || String(Number(year) - 1);
+  const week = cdcData?.week;
   if (!diseases || diseases.length === 0) {
     $('cdcSection').innerHTML = '<div class="no-data">No tracked disease data found for the current MMWR year.</div>';
     return;
@@ -876,20 +902,20 @@ function renderCDC(diseases) {
 
   let trendingUp = 0, totalYtd = 0;
   diseases.forEach(d => {
-    totalYtd += d.ytd2026;
-    const p = pct(d.ytd2026, d.ytd2025);
+    totalYtd += d.ytdCurrent;
+    const p = pct(d.ytdCurrent, d.ytdPrevious);
     if (trendClass(p) === 'up') trendingUp++;
   });
 
   $('sumTrendingUp').textContent = trendingUp;
   $('sumUsCases').textContent = fmt(totalYtd);
-  $('sumCdcUpdated').textContent = 'as of ' + now();
+  $('sumCdcUpdated').textContent = week ? `CDC week ${week}, ${year}` : ('as of ' + now());
 
   const grid = document.createElement('div');
   grid.className = 'cards-grid';
 
   diseases.forEach((d, idx) => {
-    const p = pct(d.ytd2026, d.ytd2025);
+    const p = pct(d.ytdCurrent, d.ytdPrevious);
     const trend = trendClass(p);
     const pctStr = p === null ? 'N/A' : (p >= 0 ? '+' : '') + p.toFixed(0) + '%';
     const pctClass = p === null ? 'pct-stable' : (p > 10 ? 'pct-up' : p < -10 ? 'pct-down' : 'pct-stable');
@@ -917,12 +943,12 @@ function renderCDC(diseases) {
           <span class="stat-label">This Week</span>
         </div>
         <div class="stat-cell">
-          <span class="stat-num">${fmt(d.ytd2026)}</span>
-          <span class="stat-label">YTD 2026</span>
+          <span class="stat-num">${fmt(d.ytdCurrent)}</span>
+          <span class="stat-label">YTD ${year}</span>
         </div>
         <div class="stat-cell">
-          <span class="stat-num">${fmt(d.ytd2025)}</span>
-          <span class="stat-label">YTD 2025</span>
+          <span class="stat-num">${fmt(d.ytdPrevious)}</span>
+          <span class="stat-label">YTD ${prevYear}</span>
         </div>
       </div>
       <div class="disease-card-footer">
@@ -933,7 +959,7 @@ function renderCDC(diseases) {
       <div class="state-breakdown" id="sb-${idx}">
         ${stateRows ? `
         <table class="state-table">
-          <thead><tr><th>State / Area</th><th>This Week</th><th>YTD 2026</th></tr></thead>
+          <thead><tr><th>State / Area</th><th>This Week</th><th>YTD ${year}</th></tr></thead>
           <tbody>${stateRows}</tbody>
         </table>` : '<div class="no-data">No state breakdown available.</div>'}
       </div>
@@ -1106,7 +1132,9 @@ function renderWHO(alerts) {
     const rel = a.ItemDefaultUrl || '';
     if (!rel) return 'https://www.who.int/emergencies/disease-outbreak-news';
     if (rel.startsWith('http')) return rel;
-    // Relative path like /emergencies/disease-outbreak-news/item/2026-DON602
+    if (rel.startsWith('/emergencies/disease-outbreak-news/item/')) return `https://www.who.int${rel}`;
+    const slug = rel.replace(/^\/+/, '');
+    if (/^\d{4}-DON\d+/i.test(slug)) return `https://www.who.int/emergencies/disease-outbreak-news/item/${slug}`;
     return 'https://www.who.int' + (rel.startsWith('/') ? rel : '/' + rel);
   }
 
@@ -1179,7 +1207,7 @@ async function initDashboard() {
       throw cdcResult.reason;
     }
   } catch (err) {
-    $('cdcSection').innerHTML = `<div class="error-block">⚠ CDC data unavailable: ${err.message}. The NNDSS API may be temporarily down or blocking cross-origin requests.</div>`;
+    $('cdcSection').innerHTML = `<div class="error-block">⚠ CDC data request failed: ${err.message}. Check the NNDSS API query and dataset availability.</div>`;
     $('sumTrendingUp').textContent = '—';
     $('sumUsCases').textContent = '—';
   }
