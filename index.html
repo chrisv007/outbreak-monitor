@@ -1,0 +1,1208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Global Outbreak Monitor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600;0,9..144,700;1,9..144,400&family=DM+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --page-bg: #F5F1EA;
+  --card-bg: #FAF7F0;
+  --card-border: #E5DFD3;
+  --text-primary: #1E1A15;
+  --text-secondary: #6B6358;
+  --text-muted: #9A9189;
+  --trend-up: #8B2A2A;
+  --trend-down: #4A6B3A;
+  --trend-stable: #7A6F60;
+  --risk-high: #8B2A2A;
+  --risk-moderate: #A87331;
+  --risk-low: #7A7339;
+  --risk-unknown: #7A6F60;
+  --badge-active: #4A6B3A;
+  --badge-concluded: #7A6F60;
+  --accent: #7A4F2A;
+  --shadow: 0 1px 4px rgba(30,26,21,0.08), 0 4px 16px rgba(30,26,21,0.04);
+  --radius: 10px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'DM Sans', sans-serif;
+  background: var(--page-bg);
+  color: var(--text-primary);
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+.container { max-width: 1200px; margin: 0 auto; padding: 0 16px; }
+
+/* ── Header ── */
+header {
+  background: var(--card-bg);
+  border-bottom: 1px solid var(--card-border);
+  padding: 20px 0 16px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: var(--shadow);
+}
+
+.header-inner {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.header-text h1 {
+  font-family: 'Fraunces', serif;
+  font-size: clamp(1.5rem, 4vw, 2.2rem);
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+.header-text .subtitle {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-top: 4px;
+  font-weight: 400;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--text-primary);
+  color: var(--card-bg);
+  border: none;
+  border-radius: 6px;
+  padding: 8px 14px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  white-space: nowrap;
+}
+.refresh-btn:hover { opacity: 0.8; }
+.refresh-btn.spinning svg { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.last-refresh {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+/* ── Summary Bar ── */
+.summary-bar {
+  background: var(--text-primary);
+  color: #EDE8DF;
+  padding: 12px 0;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.summary-item { text-align: center; }
+.summary-item .num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1.6rem;
+  font-weight: 500;
+  line-height: 1;
+  color: #FAF7F0;
+}
+.summary-item .label {
+  font-size: 0.7rem;
+  color: #9A9189;
+  margin-top: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.summary-item .updated {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.65rem;
+  color: #7A6F60;
+  margin-top: 2px;
+}
+
+/* ── Sections ── */
+main { padding: 24px 0 48px; }
+
+.section { margin-bottom: 40px; }
+
+.section-header {
+  margin-bottom: 16px;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.section-title {
+  font-family: 'Fraunces', serif;
+  font-size: 1.3rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+
+.section-desc {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+/* ── Cards Grid ── */
+.cards-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+@media (min-width: 640px) {
+  .cards-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (min-width: 960px) {
+  .cards-grid.three-col { grid-template-columns: repeat(3, 1fr); }
+}
+
+/* ── Disease Card ── */
+.disease-card {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  cursor: pointer;
+  transition: box-shadow 0.15s, transform 0.15s;
+}
+.disease-card:hover { box-shadow: 0 2px 8px rgba(30,26,21,0.12), 0 8px 24px rgba(30,26,21,0.07); transform: translateY(-1px); }
+
+.disease-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 10px;
+  gap: 8px;
+}
+
+.disease-name {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  flex: 1;
+}
+
+.trend-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.trend-up { background: #F5ECEC; color: var(--trend-up); }
+.trend-down { background: #EAF0EA; color: var(--trend-down); }
+.trend-stable { background: #F0EDE8; color: var(--trend-stable); }
+
+.disease-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;
+  border-top: 1px solid var(--card-border);
+}
+
+.stat-cell {
+  padding: 10px 12px;
+  border-right: 1px solid var(--card-border);
+  text-align: center;
+}
+.stat-cell:last-child { border-right: none; }
+
+.stat-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1.05rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  display: block;
+  line-height: 1;
+}
+.stat-label {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-top: 3px;
+  display: block;
+}
+
+.pct-change {
+  font-size: 0.72rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 500;
+}
+.pct-up { color: var(--trend-up); background: #F5ECEC; }
+.pct-down { color: var(--trend-down); background: #EAF0EA; }
+.pct-stable { color: var(--trend-stable); }
+
+.disease-card-footer {
+  padding: 6px 16px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+/* ── State Breakdown Panel ── */
+.state-breakdown {
+  display: none;
+  border-top: 1px solid var(--card-border);
+  padding: 12px 16px;
+  background: #F7F3EC;
+}
+.state-breakdown.open { display: block; }
+
+.state-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+.state-table th {
+  text-align: left;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  padding: 4px 8px 8px 0;
+  font-weight: 500;
+}
+.state-table td {
+  padding: 5px 8px 5px 0;
+  border-bottom: 1px solid var(--card-border);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+}
+.state-table td:first-child { font-family: 'DM Sans', sans-serif; font-size: 0.78rem; }
+.state-table tr:last-child td { border-bottom: none; }
+
+/* ── Global Outbreak Section ── */
+.outbreak-subsection {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+.outbreak-subheader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--card-border);
+  flex-wrap: wrap;
+}
+
+.outbreak-title {
+  font-family: 'Fraunces', serif;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.status-badge {
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.status-active { background: #E8F0E8; color: var(--badge-active); }
+.status-concluded { background: #EDE8E3; color: var(--badge-concluded); }
+
+.outbreak-meta {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', monospace;
+  margin-left: auto;
+}
+
+.concluded-banner {
+  background: #EDE8E3;
+  border-left: 3px solid var(--badge-concluded);
+  padding: 10px 16px;
+  font-size: 0.8rem;
+  color: var(--badge-concluded);
+  margin: 12px 20px;
+  border-radius: 4px;
+}
+
+.country-table-wrap { padding: 8px 20px 20px; overflow-x: auto; }
+
+.country-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+.country-table th {
+  text-align: left;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  padding: 6px 12px 8px 0;
+  font-weight: 500;
+  border-bottom: 1px solid var(--card-border);
+}
+.country-table td {
+  padding: 8px 12px 8px 0;
+  border-bottom: 1px solid var(--card-border);
+}
+.country-table tr:last-child td { border-bottom: none; }
+.country-table td:nth-child(2),
+.country-table td:nth-child(3) {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.78rem;
+}
+
+.bar-cell { width: 100px; }
+.bar-bg { background: var(--card-border); border-radius: 3px; height: 6px; }
+.bar-fill { background: var(--trend-up); border-radius: 3px; height: 6px; }
+
+/* ── WHO Alert Cards ── */
+.who-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+@media (min-width: 640px) { .who-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 960px) { .who-grid { grid-template-columns: repeat(3, 1fr); } }
+
+.who-card {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: box-shadow 0.15s;
+}
+.who-card:hover { box-shadow: 0 2px 8px rgba(30,26,21,0.12); }
+
+.who-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.risk-badge {
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.risk-high { background: #F5ECEC; color: var(--risk-high); }
+.risk-moderate { background: #F5EDE0; color: var(--risk-moderate); }
+.risk-low { background: #EAF0EA; color: var(--risk-low); }
+.risk-unknown { background: #F0EDE8; color: var(--risk-unknown); }
+
+.who-disease {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+.who-meta {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.who-meta .country { font-weight: 500; }
+.who-meta .dot { color: var(--card-border); }
+.who-meta .date { font-family: 'JetBrains Mono', monospace; }
+
+.who-summary {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  flex: 1;
+}
+
+.who-link {
+  font-size: 0.75rem;
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: auto;
+}
+.who-link:hover { text-decoration: underline; }
+
+/* ── Loading / Error ── */
+.loading-block {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius);
+  padding: 32px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.spinner {
+  width: 28px; height: 28px;
+  border: 2px solid var(--card-border);
+  border-top-color: var(--text-secondary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin: 0 auto 12px;
+}
+
+.error-block {
+  background: #FBF0F0;
+  border: 1px solid #E5CECE;
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  color: var(--trend-up);
+  font-size: 0.82rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.skeleton {
+  background: linear-gradient(90deg, var(--card-border) 25%, #EDE9E2 50%, var(--card-border) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 4px;
+  height: 14px;
+  margin-bottom: 8px;
+}
+@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+/* ── Misc ── */
+.expand-hint {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+hr.section-rule {
+  border: none;
+  border-top: 1px solid var(--card-border);
+  margin: 0 0 24px;
+}
+
+footer {
+  background: var(--card-bg);
+  border-top: 1px solid var(--card-border);
+  padding: 16px 0;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+footer a { color: var(--text-secondary); }
+
+.no-data {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  padding: 24px;
+  font-style: italic;
+}
+</style>
+</head>
+<body>
+
+<!-- ══ HEADER ══ -->
+<header>
+  <div class="container">
+    <div class="header-inner">
+      <div class="header-text">
+        <h1>Global Outbreak Monitor</h1>
+        <div class="subtitle">US NNDSS · Global.health Linelists · WHO Disease Outbreak News</div>
+      </div>
+      <div class="header-actions">
+        <span class="last-refresh" id="lastRefresh">—</span>
+        <button class="refresh-btn" id="refreshBtn" onclick="initDashboard()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.58"/></svg>
+          Refresh
+        </button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- ══ SUMMARY BAR ══ -->
+<div class="summary-bar">
+  <div class="container">
+    <div class="summary-grid">
+      <div class="summary-item">
+        <div class="num" id="sumTrendingUp">—</div>
+        <div class="label">US diseases trending ↑</div>
+        <div class="updated" id="sumCdcUpdated"></div>
+      </div>
+      <div class="summary-item">
+        <div class="num" id="sumUsCases">—</div>
+        <div class="label">US YTD cases tracked</div>
+      </div>
+      <div class="summary-item">
+        <div class="num" id="sumHantaCases">—</div>
+        <div class="label">Hantavirus 2026 cases</div>
+        <div class="updated" id="sumHantaUpdated"></div>
+      </div>
+      <div class="summary-item">
+        <div class="num" id="sumWhoAlerts">—</div>
+        <div class="label">WHO alerts shown</div>
+        <div class="updated" id="sumWhoUpdated"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MAIN ══ -->
+<main>
+  <div class="container">
+
+    <!-- Section 1: US Surveillance -->
+    <div class="section">
+      <div class="section-header">
+        <span class="section-title">🇺🇸 US Outbreak Surveillance</span>
+        <span class="section-desc">CDC NNDSS · click a card to expand state breakdown</span>
+      </div>
+      <div id="cdcSection">
+        <div class="loading-block"><div class="spinner"></div>Loading CDC NNDSS data…</div>
+      </div>
+    </div>
+
+    <!-- Section 2: Global Priority Outbreaks -->
+    <div class="section">
+      <div class="section-header">
+        <span class="section-title">🌍 Global Priority Outbreaks</span>
+        <span class="section-desc">Curated linelists via Global.health</span>
+      </div>
+      <div id="globalSection">
+        <div class="loading-block"><div class="spinner"></div>Loading outbreak linelist…</div>
+      </div>
+    </div>
+
+    <!-- Section 3: WHO Alerts -->
+    <div class="section">
+      <div class="section-header">
+        <span class="section-title">🌐 WHO Global Alerts</span>
+        <span class="section-desc">Disease Outbreak News · 20 most recent</span>
+      </div>
+      <div id="whoSection">
+        <div class="loading-block"><div class="spinner"></div>Loading WHO alerts…</div>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<footer>
+  <div class="container">
+    Data sources: <a href="https://data.cdc.gov/NNDSS/NNDSS-Weekly-Data/x9gk-5huc" target="_blank">CDC NNDSS</a> ·
+    <a href="https://github.com/kraemer-lab/Hondius_hantavirus_h2026" target="_blank">Global.health Hantavirus</a> ·
+    <a href="https://www.who.int/emergencies/disease-outbreak-news" target="_blank">WHO DON</a> ·
+    For situational awareness only — not a clinical resource.
+  </div>
+</footer>
+
+<script>
+'use strict';
+
+// ════════════════════════════════════════════════════════
+//  CONFIG — swap in future outbreaks by editing this object
+// ════════════════════════════════════════════════════════
+const FEATURED_OUTBREAKS = [
+  {
+    id: 'hantavirus-2026',
+    name: 'Hantavirus 2026 (MV Hondius)',
+    pathogenDesc: 'Andes-type hantavirus, cruise ship outbreak',
+    dataUrl: 'https://raw.githubusercontent.com/kraemer-lab/Hondius_hantavirus_h2026/main/data/linelist/2026_hantavirus.csv',
+    dataFormat: 'csv',
+    countryField: 'Location_Admin 0',
+    caseStatusField: 'Case_status',
+    outcomeField: 'Outcome',
+    confirmedStatuses: ['Confirmed', 'Probable'],
+    excludeStatuses: ['Discarded', 'omit_error'],
+    trackingStarted: '2026-04-03',
+    trackingStatus: 'active', // 'active' or 'ended'
+    concludedDate: null,
+    lastUpdatedNote: 'Kraemer Lab / Global.health · updated as cases reported'
+  }
+];
+
+// ════════════════════════════════════════════════════════
+//  DISEASE FILTER LIST — CDC NNDSS labels to include
+// ════════════════════════════════════════════════════════
+const DISEASE_KEYWORDS = [
+  { key: 'hantavirus', display: 'Hantavirus' },
+  { key: 'novel influenza', display: 'Novel Influenza A' },
+  { key: 'mpox', display: 'Mpox' },
+  { key: 'monkeypox', display: 'Mpox' },
+  { key: 'ebola', display: 'Ebola' },
+  { key: 'marburg', display: 'Marburg' },
+  { key: 'lassa', display: 'Lassa Fever' },
+  { key: 'crimean', display: 'Crimean-Congo HF' },
+  { key: 'viral hemorrhagic', display: 'Viral Hemorrhagic Fever' },
+  { key: 'west nile', display: 'West Nile Virus' },
+  { key: 'dengue', display: 'Dengue' },
+  { key: 'measles', display: 'Measles' },
+  { key: 'polio', display: 'Polio' },
+  { key: 'poliovirus', display: 'Polio' },
+  { key: 'pertussis', display: 'Pertussis (Whooping Cough)' },
+  { key: 'tularemia', display: 'Tularemia' },
+  { key: 'plague', display: 'Plague' },
+  { key: 'yellow fever', display: 'Yellow Fever' },
+  { key: 'q fever', display: 'Q Fever' },
+  { key: 'anthrax', display: 'Anthrax' },
+];
+
+// ════════════════════════════════════════════════════════
+//  UTILITIES
+// ════════════════════════════════════════════════════════
+const $ = id => document.getElementById(id);
+const num = v => (v === null || v === undefined || v === '' || isNaN(+v)) ? 0 : +v;
+const fmt = n => n === 0 ? '0' : n.toLocaleString();
+const pct = (a, b) => b === 0 ? null : ((a - b) / b * 100);
+const stripHtml = s => {
+  if (!s) return '';
+  const d = document.createElement('div');
+  d.innerHTML = s;
+  return d.textContent || d.innerText || '';
+};
+const trunc = (s, n) => s.length > n ? s.slice(0, n) + '…' : s;
+const fmtDate = iso => {
+  if (!iso) return '';
+  try { return new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }); }
+  catch { return iso.slice(0, 10); }
+};
+const now = () => new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+
+function matchDisease(label) {
+  const lower = (label || '').toLowerCase();
+  for (const d of DISEASE_KEYWORDS) {
+    if (lower.includes(d.key)) return d;
+  }
+  return null;
+}
+
+function trendClass(pctVal) {
+  if (pctVal === null) return 'stable';
+  if (pctVal > 10) return 'up';
+  if (pctVal < -10) return 'down';
+  return 'stable';
+}
+
+function trendLabel(t) {
+  return t === 'up' ? '↑ Trending Up' : t === 'down' ? '↓ Trending Down' : '→ Stable';
+}
+
+function parseCSV(text) {
+  const lines = text.trim().split('\n');
+  if (lines.length < 2) return [];
+  // handle quoted fields with commas
+  const parseRow = row => {
+    const cols = [];
+    let cur = '', inQ = false;
+    for (let i = 0; i < row.length; i++) {
+      const ch = row[i];
+      if (ch === '"') { inQ = !inQ; }
+      else if (ch === ',' && !inQ) { cols.push(cur.trim()); cur = ''; }
+      else { cur += ch; }
+    }
+    cols.push(cur.trim());
+    return cols;
+  };
+  const headers = parseRow(lines[0]);
+  return lines.slice(1).map(l => {
+    const vals = parseRow(l);
+    const obj = {};
+    headers.forEach((h, i) => { obj[h] = vals[i] || ''; });
+    return obj;
+  });
+}
+
+// ════════════════════════════════════════════════════════
+//  STATE
+// ════════════════════════════════════════════════════════
+let cdcData = null;
+let hantaData = null;
+let whoData = null;
+
+// ════════════════════════════════════════════════════════
+//  FETCH 1: CDC NNDSS
+// ════════════════════════════════════════════════════════
+async function fetchCDC() {
+  // Fetch current MMWR year data; use $limit=50000, filter to current year
+  const currentYear = new Date().getFullYear();
+  const url = `https://data.cdc.gov/resource/x9gk-5huc.json?$limit=50000&$where=mmwr_year=${currentYear}`;
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`CDC API ${resp.status}`);
+  return resp.json();
+}
+
+// ════════════════════════════════════════════════════════
+//  FETCH 2: HANTAVIRUS CSV
+// ════════════════════════════════════════════════════════
+async function fetchHanta(cfg) {
+  const resp = await fetch(cfg.dataUrl);
+  if (!resp.ok) throw new Error(`Linelist fetch ${resp.status}`);
+  const text = await resp.text();
+  return parseCSV(text);
+}
+
+// ════════════════════════════════════════════════════════
+//  FETCH 3: WHO DON
+// ════════════════════════════════════════════════════════
+async function fetchWHO() {
+  const resp = await fetch('https://www.who.int/api/news/diseaseoutbreaknews?$top=40');
+  if (!resp.ok) throw new Error(`WHO API ${resp.status}`);
+  const data = await resp.json();
+  // Response may be wrapped in a value array
+  return Array.isArray(data) ? data : (data.value || data.results || []);
+}
+
+// ════════════════════════════════════════════════════════
+//  RENDER: CDC
+// ════════════════════════════════════════════════════════
+function processCDC(records) {
+  // Group by disease keyword match, aggregate across all reporting areas
+  const diseaseMap = {}; // displayName -> {rows, stateRows}
+
+  for (const row of records) {
+    const label = row.label || row.disease || row['label'] || '';
+    const match = matchDisease(label);
+    if (!match) continue;
+
+    const key = match.display;
+    if (!diseaseMap[key]) {
+      diseaseMap[key] = {
+        display: key,
+        currentWeek: 0,
+        ytd2026: 0,
+        ytd2025: 0,
+        max52: 0,
+        states: {}
+      };
+    }
+
+    const d = diseaseMap[key];
+    d.currentWeek += num(row.current_week);
+    // YTD fields — try multiple possible field names from Socrata
+    d.ytd2026 += num(
+      row.cumulative_ytd_current_mmwr_year ??
+      row['cumulative_ytd_current_mmwr_year'] ??
+      row.cum_ytd_current_mmwr_yr ?? 0
+    );
+    d.ytd2025 += num(
+      row.cumulative_ytd_previous_mmwr_year ??
+      row['cumulative_ytd_previous_mmwr_year'] ??
+      row.cum_ytd_previous_mmwr_yr ?? 0
+    );
+    d.max52 = Math.max(d.max52, num(row.previous_52_week_max));
+
+    // State breakdown
+    const area = row.reporting_area || row['reporting area'] || row.state || 'Unknown';
+    if (!d.states[area]) d.states[area] = { current: 0, ytd: 0 };
+    d.states[area].current += num(row.current_week);
+    d.states[area].ytd += num(row.cumulative_ytd_current_mmwr_year ?? row.cum_ytd_current_mmwr_yr ?? 0);
+  }
+
+  return Object.values(diseaseMap)
+    .filter(d => d.ytd2026 > 0 || d.currentWeek > 0 || d.ytd2025 > 0)
+    .sort((a, b) => b.ytd2026 - a.ytd2026);
+}
+
+function renderCDC(diseases) {
+  if (!diseases || diseases.length === 0) {
+    $('cdcSection').innerHTML = '<div class="no-data">No tracked disease data found for the current MMWR year.</div>';
+    return;
+  }
+
+  let trendingUp = 0, totalYtd = 0;
+  diseases.forEach(d => {
+    totalYtd += d.ytd2026;
+    const p = pct(d.ytd2026, d.ytd2025);
+    if (trendClass(p) === 'up') trendingUp++;
+  });
+
+  $('sumTrendingUp').textContent = trendingUp;
+  $('sumUsCases').textContent = fmt(totalYtd);
+  $('sumCdcUpdated').textContent = 'as of ' + now();
+
+  const grid = document.createElement('div');
+  grid.className = 'cards-grid';
+
+  diseases.forEach((d, idx) => {
+    const p = pct(d.ytd2026, d.ytd2025);
+    const trend = trendClass(p);
+    const pctStr = p === null ? 'N/A' : (p >= 0 ? '+' : '') + p.toFixed(0) + '%';
+    const pctClass = p === null ? 'pct-stable' : (p > 10 ? 'pct-up' : p < -10 ? 'pct-down' : 'pct-stable');
+
+    const stateList = Object.entries(d.states)
+      .filter(([k]) => k !== 'UNITED STATES' && k !== 'United States' && k !== 'U.S. TOTAL' && k !== 'U.S. Total')
+      .sort((a, b) => b[1].ytd - a[1].ytd)
+      .slice(0, 20);
+
+    const stateRows = stateList.map(([state, sv]) =>
+      `<tr><td>${state}</td><td>${fmt(sv.current)}</td><td>${fmt(sv.ytd)}</td></tr>`
+    ).join('');
+
+    const card = document.createElement('div');
+    card.className = 'disease-card';
+    card.dataset.idx = idx;
+    card.innerHTML = `
+      <div class="disease-card-header">
+        <span class="disease-name">${d.display}</span>
+        <span class="trend-badge trend-${trend}">${trendLabel(trend)}</span>
+      </div>
+      <div class="disease-stats">
+        <div class="stat-cell">
+          <span class="stat-num">${fmt(d.currentWeek)}</span>
+          <span class="stat-label">This Week</span>
+        </div>
+        <div class="stat-cell">
+          <span class="stat-num">${fmt(d.ytd2026)}</span>
+          <span class="stat-label">YTD 2026</span>
+        </div>
+        <div class="stat-cell">
+          <span class="stat-num">${fmt(d.ytd2025)}</span>
+          <span class="stat-label">YTD 2025</span>
+        </div>
+      </div>
+      <div class="disease-card-footer">
+        <span>52-wk max: <strong>${fmt(d.max52)}</strong></span>
+        <span class="pct-change ${pctClass}">${pctStr} YoY</span>
+        <span class="expand-hint">▼ states</span>
+      </div>
+      <div class="state-breakdown" id="sb-${idx}">
+        ${stateRows ? `
+        <table class="state-table">
+          <thead><tr><th>State / Area</th><th>This Week</th><th>YTD 2026</th></tr></thead>
+          <tbody>${stateRows}</tbody>
+        </table>` : '<div class="no-data">No state breakdown available.</div>'}
+      </div>
+    `;
+
+    card.addEventListener('click', () => {
+      const panel = $('sb-' + idx);
+      const hint = card.querySelector('.expand-hint');
+      const isOpen = panel.classList.toggle('open');
+      hint.textContent = isOpen ? '▲ hide' : '▼ states';
+    });
+
+    grid.appendChild(card);
+  });
+
+  $('cdcSection').innerHTML = '';
+  $('cdcSection').appendChild(grid);
+}
+
+// ════════════════════════════════════════════════════════
+//  RENDER: GLOBAL OUTBREAKS
+// ════════════════════════════════════════════════════════
+function renderGlobal(results) {
+  const container = document.createElement('div');
+
+  FEATURED_OUTBREAKS.forEach((cfg, i) => {
+    const result = results[i];
+    const sub = document.createElement('div');
+    sub.className = 'outbreak-subsection';
+
+    const isActive = cfg.trackingStatus === 'active';
+    const badgeClass = isActive ? 'status-active' : 'status-concluded';
+    const badgeText = isActive ? 'Active' : 'Concluded';
+
+    sub.innerHTML = `
+      <div class="outbreak-subheader">
+        <span class="outbreak-title">${cfg.name}</span>
+        <span class="status-badge ${badgeClass}">${badgeText}</span>
+        <span class="outbreak-meta">${cfg.lastUpdatedNote}</span>
+      </div>
+      ${!isActive && cfg.concludedDate ? `<div class="concluded-banner">⚠ Tracking concluded ${fmtDate(cfg.concludedDate)}</div>` : ''}
+      <div id="outbreakBody-${i}">
+        <div class="loading-block" style="padding:20px"><div class="spinner"></div>Loading…</div>
+      </div>
+    `;
+    container.appendChild(sub);
+
+    // Render after appending so getElementById works
+    if (result.status === 'fulfilled') {
+      renderOutbreakData(cfg, result.value, i);
+    } else {
+      $(`outbreakBody-${i}`).innerHTML = `<div class="error-block">⚠ ${result.reason?.message || 'Failed to load linelist data'}</div>`;
+    }
+  });
+
+  $('globalSection').innerHTML = '';
+  $('globalSection').appendChild(container);
+
+  // Update summary
+  const first = results[0];
+  if (first?.status === 'fulfilled') {
+    const rows = first.value;
+    const cfg = FEATURED_OUTBREAKS[0];
+    const valid = rows.filter(r => {
+      const s = (r[cfg.caseStatusField] || '').trim();
+      return cfg.confirmedStatuses.some(c => s.toLowerCase() === c.toLowerCase());
+    });
+    $('sumHantaCases').textContent = valid.length;
+    $('sumHantaUpdated').textContent = 'confirmed + probable';
+  }
+}
+
+function renderOutbreakData(cfg, rows, idx) {
+  const target = $(`outbreakBody-${idx}`);
+  if (!rows || rows.length === 0) {
+    target.innerHTML = '<div class="no-data">No data found in linelist.</div>';
+    return;
+  }
+
+  // Filter to confirmed + probable
+  const valid = rows.filter(r => {
+    const s = (r[cfg.caseStatusField] || '').trim();
+    return cfg.confirmedStatuses.some(c => s.toLowerCase() === c.toLowerCase());
+  });
+
+  // Aggregate by country
+  const countryMap = {};
+  for (const row of valid) {
+    const country = (row[cfg.countryField] || 'Unknown').trim() || 'Unknown';
+    if (!countryMap[country]) countryMap[country] = { total: 0, deaths: 0, ongoing: 0 };
+    countryMap[country].total++;
+    const outcome = (row[cfg.outcomeField] || '').toLowerCase();
+    if (outcome.includes('death') || outcome.includes('died')) countryMap[country].deaths++;
+    else if (outcome.includes('ongoing') || outcome.includes('recover')) countryMap[country].ongoing++;
+  }
+
+  const sorted = Object.entries(countryMap).sort((a, b) => b[1].total - a[1].total);
+  const maxCount = sorted[0]?.[1]?.total || 1;
+  const total = valid.length;
+
+  const rows2 = sorted.map(([country, v]) => {
+    const barW = Math.round((v.total / maxCount) * 100);
+    const cfr = v.total > 0 ? ((v.deaths / v.total) * 100).toFixed(0) + '%' : '—';
+    return `<tr>
+      <td>${country}</td>
+      <td>${v.total}</td>
+      <td>${v.deaths > 0 ? v.deaths + ' (' + cfr + ')' : '0'}</td>
+      <td class="bar-cell"><div class="bar-bg"><div class="bar-fill" style="width:${barW}%"></div></div></td>
+    </tr>`;
+  }).join('');
+
+  target.innerHTML = `
+    <div class="country-table-wrap">
+      <p style="font-size:0.75rem;color:var(--text-muted);margin-bottom:12px">
+        Showing ${total} confirmed/probable cases across ${sorted.length} location${sorted.length !== 1 ? 's' : ''}.
+        Pathogen: <em>${cfg.pathogenDesc}</em>. Tracking started ${fmtDate(cfg.trackingStarted)}.
+      </p>
+      <table class="country-table">
+        <thead><tr><th>Country / Location</th><th>Cases</th><th>Deaths (CFR)</th><th></th></tr></thead>
+        <tbody>${rows2}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+// ════════════════════════════════════════════════════════
+//  RENDER: WHO
+// ════════════════════════════════════════════════════════
+function renderWHO(alerts) {
+  if (!alerts || alerts.length === 0) {
+    $('whoSection').innerHTML = '<div class="no-data">No WHO alerts available.</div>';
+    return;
+  }
+
+  // Sort by date descending
+  alerts.sort((a, b) => {
+    const da = new Date(a.PublicationDateAndTime || a.PublicationDate || 0);
+    const db = new Date(b.PublicationDateAndTime || b.PublicationDate || 0);
+    return db - da;
+  });
+
+  const top20 = alerts.slice(0, 20);
+  $('sumWhoAlerts').textContent = top20.length;
+  $('sumWhoUpdated').textContent = 'as of ' + now();
+
+  function getRiskLevel(a) {
+    const assess = (a.Assessment || '').toLowerCase();
+    if (assess.includes('very high') || assess.includes('high')) return 'high';
+    if (assess.includes('moderate')) return 'moderate';
+    if (assess.includes('low')) return 'low';
+    return 'unknown';
+  }
+
+  function getCountry(a) {
+    if (a.regionscountries) {
+      if (Array.isArray(a.regionscountries)) return a.regionscountries.map(r => r.title || r.name || r).join(', ');
+      return String(a.regionscountries);
+    }
+    return a.country || a.Country || '';
+  }
+
+  function getSummary(a) {
+    const raw = a.Summary || '';
+    if (raw.trim()) return trunc(stripHtml(raw), 200);
+    const ov = stripHtml(a.Overview || '');
+    return trunc(ov, 200);
+  }
+
+  function getUrl(a) {
+    const rel = a.ItemDefaultUrl || '';
+    if (!rel) return 'https://www.who.int/emergencies/disease-outbreak-news';
+    if (rel.startsWith('http')) return rel;
+    // Relative path like /emergencies/disease-outbreak-news/item/2026-DON602
+    return 'https://www.who.int' + (rel.startsWith('/') ? rel : '/' + rel);
+  }
+
+  const grid = document.createElement('div');
+  grid.className = 'who-grid';
+
+  for (const a of top20) {
+    const risk = getRiskLevel(a);
+    const riskLabel = risk.charAt(0).toUpperCase() + risk.slice(1) + ' Risk';
+    const country = getCountry(a);
+    const summary = getSummary(a);
+    const url = getUrl(a);
+    const date = fmtDate(a.PublicationDateAndTime || a.PublicationDate);
+    const disease = a.Title || a.title || 'Unknown';
+
+    const card = document.createElement('div');
+    card.className = 'who-card';
+    card.innerHTML = `
+      <div class="who-card-top">
+        <span class="who-disease">${disease}</span>
+        <span class="risk-badge risk-${risk}">${riskLabel}</span>
+      </div>
+      <div class="who-meta">
+        ${country ? `<span class="country">${country}</span><span class="dot">·</span>` : ''}
+        <span class="date">${date}</span>
+      </div>
+      ${summary ? `<div class="who-summary">${summary}</div>` : ''}
+      <a class="who-link" href="${url}" target="_blank" rel="noopener">
+        Full WHO alert ↗
+      </a>
+    `;
+    grid.appendChild(card);
+  }
+
+  $('whoSection').innerHTML = '';
+  $('whoSection').appendChild(grid);
+}
+
+// ════════════════════════════════════════════════════════
+//  MAIN INIT
+// ════════════════════════════════════════════════════════
+async function initDashboard() {
+  const btn = $('refreshBtn');
+  btn.classList.add('spinning');
+  btn.disabled = true;
+
+  // Reset sections to loading state
+  $('cdcSection').innerHTML = '<div class="loading-block"><div class="spinner"></div>Loading CDC NNDSS data…</div>';
+  $('globalSection').innerHTML = '<div class="loading-block"><div class="spinner"></div>Loading outbreak linelist…</div>';
+  $('whoSection').innerHTML = '<div class="loading-block"><div class="spinner"></div>Loading WHO alerts…</div>';
+
+  // Fetch all in parallel
+  const cdcPromise = fetchCDC();
+  const hantaPromises = FEATURED_OUTBREAKS.map(cfg => fetchHanta(cfg));
+  const whoPromise = fetchWHO();
+
+  const [cdcResult, ...hantaResults] = await Promise.allSettled([
+    cdcPromise,
+    ...hantaPromises,
+    whoPromise
+  ]);
+  const whoResult = hantaResults.pop();
+
+  // Render CDC
+  try {
+    if (cdcResult.status === 'fulfilled') {
+      const diseases = processCDC(cdcResult.value);
+      renderCDC(diseases);
+    } else {
+      throw cdcResult.reason;
+    }
+  } catch (err) {
+    $('cdcSection').innerHTML = `<div class="error-block">⚠ CDC data unavailable: ${err.message}. The NNDSS API may be temporarily down or blocking cross-origin requests.</div>`;
+    $('sumTrendingUp').textContent = '—';
+    $('sumUsCases').textContent = '—';
+  }
+
+  // Render Global
+  try {
+    renderGlobal(hantaResults);
+  } catch (err) {
+    $('globalSection').innerHTML = `<div class="error-block">⚠ Global outbreak data unavailable: ${err.message}</div>`;
+    $('sumHantaCases').textContent = '—';
+  }
+
+  // Render WHO
+  try {
+    if (whoResult.status === 'fulfilled') {
+      renderWHO(whoResult.value);
+    } else {
+      throw whoResult.reason;
+    }
+  } catch (err) {
+    $('whoSection').innerHTML = `<div class="error-block">⚠ WHO data unavailable: ${err.message}. The WHO API may be blocking cross-origin requests.</div>`;
+    $('sumWhoAlerts').textContent = '—';
+  }
+
+  // Update timestamps
+  const t = now();
+  $('lastRefresh').textContent = 'Refreshed ' + t;
+
+  btn.classList.remove('spinning');
+  btn.disabled = false;
+}
+
+// Kick off on load
+initDashboard();
+</script>
+</body>
+</html>
