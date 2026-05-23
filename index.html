@@ -779,7 +779,7 @@ let whoData = null;
 async function fetchCDC() {
   // Fetch current MMWR year data; use $limit=50000, filter to current year
   const currentYear = new Date().getFullYear();
-  const url = `https://data.cdc.gov/resource/x9gk-5huc.json?$limit=50000&$where=mmwr_year=${currentYear}`;
+  const url = `https://data.cdc.gov/resource/x9gk-5huc.json?$limit=50000&$where=current_mmwr_year=${currentYear}`;
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`CDC API ${resp.status}`);
   return resp.json();
@@ -799,11 +799,20 @@ async function fetchHanta(cfg) {
 //  FETCH 3: WHO DON
 // ════════════════════════════════════════════════════════
 async function fetchWHO() {
-  const resp = await fetch('https://www.who.int/api/news/diseaseoutbreaknews?$top=40');
-  if (!resp.ok) throw new Error(`WHO API ${resp.status}`);
-  const data = await resp.json();
-  // Response may be wrapped in a value array
-  return Array.isArray(data) ? data : (data.value || data.results || []);
+  let allRecords = [];
+  let url = 'https://www.who.int/api/news/diseaseoutbreaknews?$top=40';
+  let pages = 0;
+  while (url && pages < 8) {
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error('WHO API ' + resp.status);
+    const data = await resp.json();
+    const records = Array.isArray(data) ? data : (data.value || []);
+    allRecords = allRecords.concat(records);
+    url = data['@odata.nextLink'] || null;
+    pages++;
+    if (allRecords.length >= 200) break;
+  }
+  return allRecords;
 }
 
 // ════════════════════════════════════════════════════════
@@ -948,6 +957,9 @@ function renderCDC(diseases) {
 function renderGlobal(results) {
   const container = document.createElement('div');
 
+  $('globalSection').innerHTML = '';
+  $('globalSection').appendChild(container);
+
   FEATURED_OUTBREAKS.forEach((cfg, i) => {
     const result = results[i];
     const sub = document.createElement('div');
@@ -977,9 +989,6 @@ function renderGlobal(results) {
       $(`outbreakBody-${i}`).innerHTML = `<div class="error-block">⚠ ${result.reason?.message || 'Failed to load linelist data'}</div>`;
     }
   });
-
-  $('globalSection').innerHTML = '';
-  $('globalSection').appendChild(container);
 
   // Update summary
   const first = results[0];
