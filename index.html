@@ -777,9 +777,11 @@ let whoData = null;
 //  FETCH 1: CDC NNDSS
 // ════════════════════════════════════════════════════════
 async function fetchCDC() {
-  // Fetch current MMWR year data; use $limit=50000, filter to current year
+  // Fetch current MMWR year data; use $limit=50000, filter to current year.
+  // The Socrata API field identifier for this dataset is "mmwr_year" (text type,
+  // so the value must be single-quoted in the $where clause).
   const currentYear = new Date().getFullYear();
-  const url = `https://data.cdc.gov/resource/x9gk-5huc.json?$limit=50000&$where=current_mmwr_year=${currentYear}`;
+  const url = `https://data.cdc.gov/resource/x9gk-5huc.json?$limit=50000&$where=mmwr_year='${currentYear}'`;
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`CDC API ${resp.status}`);
   return resp.json();
@@ -799,20 +801,17 @@ async function fetchHanta(cfg) {
 //  FETCH 3: WHO DON
 // ════════════════════════════════════════════════════════
 async function fetchWHO() {
-  let allRecords = [];
-  let url = 'https://www.who.int/api/news/diseaseoutbreaknews?$top=40';
-  let pages = 0;
-  while (url && pages < 8) {
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error('WHO API ' + resp.status);
-    const data = await resp.json();
-    const records = Array.isArray(data) ? data : (data.value || []);
-    allRecords = allRecords.concat(records);
-    url = data['@odata.nextLink'] || null;
-    pages++;
-    if (allRecords.length >= 200) break;
-  }
-  return allRecords;
+  // The WHO OData API returns records in ascending publication-date order by
+  // default.  When the previous code followed @odata.nextLink it accumulated
+  // up to 200 records starting from the oldest (2015-era) entries; sorting
+  // those descending and taking the top 20 therefore produced old alerts.
+  // Fix: request the 20 most-recent records in a single call by adding an
+  // explicit $orderby=PublicationDateAndTime desc.  No pagination needed.
+  const url = 'https://www.who.int/api/news/diseaseoutbreaknews?$top=20&$orderby=PublicationDateAndTime desc';
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error('WHO API ' + resp.status);
+  const data = await resp.json();
+  return Array.isArray(data) ? data : (data.value || []);
 }
 
 // ════════════════════════════════════════════════════════
