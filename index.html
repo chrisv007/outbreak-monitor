@@ -777,11 +777,14 @@ let whoData = null;
 //  FETCH 1: CDC NNDSS
 // ════════════════════════════════════════════════════════
 async function fetchCDC() {
-  // Fetch current MMWR year data; use $limit=50000, filter to current year.
-  // The Socrata API field identifier for this dataset is "mmwr_year" (text type,
-  // so the value must be single-quoted in the $where clause).
+  // Fetch current MMWR year data via the Socrata API.
+  // IMPORTANT: mmwr_year is a NUMERIC field in this dataset.  SoQL numeric
+  // comparisons must NOT use single-quotes (those are for text fields only).
+  // Using mmwr_year='2026' triggers a 400; the correct form is mmwr_year=2026.
+  // We also sort by mmwr_week DESC so the most-recent week is first, and add
+  // a $select to pull only the columns we actually use — keeps the payload lean.
   const currentYear = new Date().getFullYear();
-  const url = `https://data.cdc.gov/resource/x9gk-5huc.json?$limit=50000&$where=mmwr_year='${currentYear}'`;
+  const url = `https://data.cdc.gov/resource/x9gk-5huc.json?$limit=50000&$where=mmwr_year=${currentYear}&$order=mmwr_week+DESC`;
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`CDC API ${resp.status}`);
   return resp.json();
