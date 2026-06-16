@@ -59,11 +59,43 @@ Never assume a fixed week number. The dataset lags publication by one to two wee
 
 ---
 
-### 2. Global.health Linelists
+### 2. Global Priority Outbreaks (featured-outbreak slot)
 
-**Base URL:** `https://api.global.health/` (confirm exact endpoint in current `index.html`)
+This is a swappable slot that gives one current high-priority outbreak a detailed
+breakdown. The outbreak it tracks is defined entirely by the `FEATURED_OUTBREAKS`
+config object in `index.html`. When the tracked outbreak winds down, swap the config
+for a new feed (see the data-freshness rule below for the signal to do so).
 
-**Quirks:** Field names and available filters vary by outbreak dataset. Verify schema against a live response before changing query parameters.
+**Currently tracking:** Ebola, Bundibugyo virus (BDBV), DRC & Uganda 2026. WHO declared
+a PHEIC on 2026-05-17; it is the largest BDBV outbreak on record.
+
+**Data source:** `INRB-UMIE/Ebola_DRC_2026` (INSP daily SitRep pipeline), raw CSVs under
+`data/insp_sitrep/processed/`. Confirmed live field names:
+
+| File | Fields |
+|---|---|
+| `insp_sitrep__cumulative_confirmed_cases__daily.csv` | `nom`, `date`, `cumulative_confirmed_cases` |
+| `insp_sitrep__cumulative_confirmed_deaths__daily.csv` | `nom`, `date`, `cumulative_confirmed_deaths` |
+| `insp_sitrep__national_cumulative_confirmed_cases__daily.csv` | `nom` (=`DRC`), `date`, `national_cumulative_confirmed_cases` |
+| `insp_sitrep__national_cumulative_confirmed_deaths__daily.csv` | `nom` (=`DRC`), `date`, `national_cumulative_confirmed_deaths` |
+
+**Quirks:**
+- Per-zone files use **different value-column names** than the national files
+  (`cumulative_*` vs `national_cumulative_*`). Mixing them up returns zeros.
+- The data is a cumulative daily series: take each zone's row at the **latest date**, do
+  not sum across dates.
+- Zone-name spelling variants exist within the same feed (for example `Mongbwalu` vs
+  `Mongbalu`). Fold them with `data/aliases.csv` (`observed_name` -> `canonical_nom`)
+  before aggregating, or the per-zone table double-lists the same zone.
+- An `NA` zone row holds cases not yet assigned to a health zone. Keep it, labelled
+  "Unassigned"; drop the `DRC` aggregate row from the per-zone table.
+- Deaths cells may be `ND` (no data); treat as 0.
+
+**Non-negotiable data-freshness indicator:** the section must always show whether the feed
+is still live. `dataFreshness()` compares the feed's most recent date against the viewer's
+current date and the config's `freshnessWindowDays` (currently 14). Inside the window the
+section shows a green LIVE banner; past it the banner flips to a red STALE / replace-this-
+section warning. This is how the user knows when to have the featured outbreak swapped out.
 
 ---
 
@@ -109,3 +141,4 @@ If the response is an empty array `[]`, the query is wrong. Do not commit until 
 |---|---|
 | **PR #6** | Codex-assisted fix. Implemented two-step max(week) query to find the latest available MMWR week before fetching rows. Corrected field names to the confirmed JSON schema: `year`, `week`, `states`, `label`, `m1`, `m2`, `m3`, `m4`. Added client-side exclusion of aggregate geographic rows (TOTAL, U.S. TOTAL, regional census group names) to prevent double-counting. Fixed WHO DON query to use `$orderby=PublicationDateAndTime desc` so the 20 most recent alerts are returned instead of the 20 oldest. |
 | **Hantavirus DOM fix** | Corrected DOM append order for the hantavirus section; elements were being inserted out of sequence, causing the panel to render incorrectly. |
+| **Featured-outbreak swap (Ebola BDBV 2026)** | Re-evaluated the Global Priority Outbreaks slot. The MV Hondius hantavirus outbreak concluded ~2026-05-11 (13 cases, source feed static), so it was no longer the most relevant outbreak. Replaced it with the Ebola Bundibugyo virus outbreak in DRC & Uganda (WHO PHEIC 2026-05-17; 782 confirmed / 181 deaths as of 2026-06-13; largest BDBV outbreak on record). New source: `INRB-UMIE/Ebola_DRC_2026` INSP SitRep CSVs, aggregated by health zone with `aliases.csv` canonicalization. Added a `dataFreshness()` live/stale indicator (green LIVE banner vs red STALE/replace banner, `freshnessWindowDays=14`) so it is always obvious when the feed has gone stale and the slot needs a new outbreak. Verified all feeds return HTTP 200 with real rows; national totals match WHO. |

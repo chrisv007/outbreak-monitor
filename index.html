@@ -364,6 +364,32 @@ main { padding: 24px 0 48px; }
   border-radius: 4px;
 }
 
+/* ── Data-freshness indicator (live vs stale feed) ── */
+.freshness-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  margin-bottom: 14px;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+.freshness-live { background: #E8F0E8; color: #2E5226; border-left: 4px solid var(--badge-active); }
+.freshness-stale { background: #FBF0F0; color: #7A2020; border-left: 4px solid var(--risk-high); }
+.freshness-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+.freshness-dot.live { background: var(--badge-active); box-shadow: 0 0 0 3px rgba(74,107,58,0.18); animation: pulse 2s ease-in-out infinite; }
+.freshness-dot.stale { background: var(--risk-high); box-shadow: 0 0 0 3px rgba(139,42,42,0.18); }
+@keyframes pulse { 0%,100% { box-shadow: 0 0 0 3px rgba(74,107,58,0.18); } 50% { box-shadow: 0 0 0 5px rgba(74,107,58,0.06); } }
+
+.status-live { background: #E8F0E8; color: var(--badge-active); }
+.status-stale { background: #F5ECEC; color: var(--risk-high); }
+
 .country-table-wrap { padding: 8px 20px 20px; overflow-x: auto; }
 
 .country-table {
@@ -561,7 +587,7 @@ footer a { color: var(--text-secondary); }
     <div class="header-inner">
       <div class="header-text">
         <h1>Global Outbreak Monitor</h1>
-        <div class="subtitle">US NNDSS · Global.health Linelists · WHO Disease Outbreak News</div>
+        <div class="subtitle">US NNDSS · Priority Outbreak Tracker · WHO Disease Outbreak News</div>
       </div>
       <div class="header-actions">
         <span class="last-refresh" id="lastRefresh">—</span>
@@ -588,9 +614,9 @@ footer a { color: var(--text-secondary); }
         <div class="label">US YTD cases tracked</div>
       </div>
       <div class="summary-item">
-        <div class="num" id="sumHantaCases">—</div>
-        <div class="label">Hantavirus 2026 cases</div>
-        <div class="updated" id="sumHantaUpdated"></div>
+        <div class="num" id="sumOutbreakCases">—</div>
+        <div class="label">Ebola BDBV confirmed (DRC)</div>
+        <div class="updated" id="sumOutbreakUpdated"></div>
       </div>
       <div class="summary-item">
         <div class="num" id="sumWhoAlerts">—</div>
@@ -620,7 +646,7 @@ footer a { color: var(--text-secondary); }
     <div class="section">
       <div class="section-header">
         <span class="section-title">🌍 Global Priority Outbreaks</span>
-        <span class="section-desc">Curated linelists via Global.health</span>
+        <span class="section-desc">Detailed tracking of the current top-priority outbreak · live data-freshness indicator</span>
       </div>
       <div id="globalSection">
         <div class="loading-block"><div class="spinner"></div>Loading outbreak linelist…</div>
@@ -644,7 +670,7 @@ footer a { color: var(--text-secondary); }
 <footer>
   <div class="container">
     Data sources: <a href="https://data.cdc.gov/NNDSS/NNDSS-Weekly-Data/x9gk-5huc" target="_blank">CDC NNDSS</a> ·
-    <a href="https://github.com/kraemer-lab/Hondius_hantavirus_h2026" target="_blank">Global.health Hantavirus</a> ·
+    <a href="https://github.com/INRB-UMIE/Ebola_DRC_2026" target="_blank">INRB-UMIE Ebola DRC 2026</a> ·
     <a href="https://www.who.int/emergencies/disease-outbreak-news" target="_blank">WHO DON</a> ·
     For situational awareness only — not a clinical resource.
   </div>
@@ -656,22 +682,39 @@ footer a { color: var(--text-secondary); }
 // ════════════════════════════════════════════════════════
 //  CONFIG — swap in future outbreaks by editing this object
 // ════════════════════════════════════════════════════════
+// To swap in a future priority outbreak, replace this object with one pointing at
+// the new feed. The data-freshness indicator (see freshnessWindowDays below) will
+// automatically flag the section as STALE once the feed stops updating, signalling
+// when it is time to re-evaluate and replace.
 const FEATURED_OUTBREAKS = [
   {
-    id: 'hantavirus-2026',
-    name: 'Hantavirus 2026 (MV Hondius)',
-    pathogenDesc: 'Andes-type hantavirus, cruise ship outbreak',
-    dataUrl: 'https://raw.githubusercontent.com/kraemer-lab/Hondius_hantavirus_h2026/main/data/linelist/2026_hantavirus.csv',
-    dataFormat: 'csv',
-    countryField: 'Location_Admin 0',
-    caseStatusField: 'Case_status',
-    outcomeField: 'Outcome',
-    confirmedStatuses: ['Confirmed', 'Probable'],
-    excludeStatuses: ['Discarded', 'omit_error'],
-    trackingStarted: '2026-04-03',
+    id: 'ebola-bdbv-2026',
+    name: 'Ebola — Bundibugyo virus 2026 (DRC & Uganda)',
+    pathogenDesc: 'Bundibugyo ebolavirus (BDBV); WHO PHEIC declared 17 May 2026 — largest BDBV outbreak on record',
+    // INRB-UMIE / INSP daily SitRep pipeline. Cumulative confirmed, by health zone.
+    casesUrl: 'https://raw.githubusercontent.com/INRB-UMIE/Ebola_DRC_2026/main/data/insp_sitrep/processed/insp_sitrep__cumulative_confirmed_cases__daily.csv',
+    deathsUrl: 'https://raw.githubusercontent.com/INRB-UMIE/Ebola_DRC_2026/main/data/insp_sitrep/processed/insp_sitrep__cumulative_confirmed_deaths__daily.csv',
+    nationalCasesUrl: 'https://raw.githubusercontent.com/INRB-UMIE/Ebola_DRC_2026/main/data/insp_sitrep/processed/insp_sitrep__national_cumulative_confirmed_cases__daily.csv',
+    nationalDeathsUrl: 'https://raw.githubusercontent.com/INRB-UMIE/Ebola_DRC_2026/main/data/insp_sitrep/processed/insp_sitrep__national_cumulative_confirmed_deaths__daily.csv',
+    // Maps spelling variants (observed_name) to a canonical zone (canonical_nom) so
+    // the per-zone table does not double-list the same health zone.
+    aliasUrl: 'https://raw.githubusercontent.com/INRB-UMIE/Ebola_DRC_2026/main/data/aliases.csv',
+    zoneField: 'nom',
+    dateField: 'date',
+    casesValueField: 'cumulative_confirmed_cases',
+    deathsValueField: 'cumulative_confirmed_deaths',
+    nationalCasesValueField: 'national_cumulative_confirmed_cases',
+    nationalDeathsValueField: 'national_cumulative_confirmed_deaths',
+    trackingStarted: '2026-05-14',
     trackingStatus: 'active', // 'active' or 'ended'
     concludedDate: null,
-    lastUpdatedNote: 'Kraemer Lab / Global.health · updated as cases reported'
+    // Data-freshness contract: if the feed's most recent date is older than this
+    // many days relative to the viewer's current date, the section flips to a loud
+    // STALE banner telling the user to have this outbreak swapped out.
+    freshnessWindowDays: 14,
+    sourceName: 'INRB-UMIE · INSP SitRep pipeline',
+    sourceUrl: 'https://github.com/INRB-UMIE/Ebola_DRC_2026',
+    lastUpdatedNote: 'INRB-UMIE · INSP daily SitRep · cumulative confirmed'
   }
 ];
 
@@ -770,7 +813,7 @@ function parseCSV(text) {
 //  STATE
 // ════════════════════════════════════════════════════════
 let cdcData = null;
-let hantaData = null;
+let outbreakData = null;
 let whoData = null;
 
 // ════════════════════════════════════════════════════════
@@ -806,13 +849,104 @@ async function fetchCDC() {
 }
 
 // ════════════════════════════════════════════════════════
-//  FETCH 2: HANTAVIRUS CSV
+//  FETCH 2: FEATURED OUTBREAK (daily cumulative, by health zone)
 // ════════════════════════════════════════════════════════
-async function fetchHanta(cfg) {
-  const resp = await fetch(cfg.dataUrl);
-  if (!resp.ok) throw new Error(`Linelist fetch ${resp.status}`);
-  const text = await resp.text();
-  return parseCSV(text);
+async function fetchOutbreak(cfg) {
+  const getText = async url => {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(`Feed ${r.status}`);
+    return r.text();
+  };
+
+  const [casesText, deathsText, natCasesText, natDeathsText, aliasText] = await Promise.all([
+    getText(cfg.casesUrl),
+    getText(cfg.deathsUrl),
+    getText(cfg.nationalCasesUrl),
+    getText(cfg.nationalDeathsUrl),
+    cfg.aliasUrl ? getText(cfg.aliasUrl).catch(() => '') : Promise.resolve('')
+  ]);
+
+  const caseRows = parseCSV(casesText);
+  const deathRows = parseCSV(deathsText);
+  const natCaseRows = parseCSV(natCasesText);
+  const natDeathRows = parseCSV(natDeathsText);
+
+  // Build observed -> canonical zone-name map to fold spelling variants together.
+  const aliasMap = {};
+  for (const a of parseCSV(aliasText)) {
+    const obs = (a.observed_name || '').trim();
+    const canon = (a.canonical_nom || '').trim();
+    if (obs && canon) aliasMap[obs] = canon;
+  }
+  const canonical = name => aliasMap[name] || name;
+
+  // For a cumulative daily series, keep each zone's value at its most recent date.
+  // Dates are ISO (YYYY-MM-DD), so lexical comparison equals chronological order.
+  const latestByZone = (rows, valField) => {
+    const m = {};
+    for (const r of rows) {
+      const zone = (r[cfg.zoneField] || '').trim();
+      const date = (r[cfg.dateField] || '').trim();
+      if (!zone || !date) continue;
+      if (!m[zone] || date > m[zone].date) m[zone] = { date, val: num(r[valField]) };
+    }
+    return m;
+  };
+
+  const casesMap = latestByZone(caseRows, cfg.casesValueField);
+  const deathsMap = latestByZone(deathRows, cfg.deathsValueField);
+
+  const toSeries = (rows, valField) => rows
+    .map(r => ({ date: (r[cfg.dateField] || '').trim(), val: num(r[valField]) }))
+    .filter(x => x.date)
+    .sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+
+  const caseSeries = toSeries(natCaseRows, cfg.nationalCasesValueField);
+  const deathSeries = toSeries(natDeathRows, cfg.nationalDeathsValueField);
+  const latestNat = caseSeries[caseSeries.length - 1] || null;
+  const prevNat = caseSeries.length >= 2 ? caseSeries[caseSeries.length - 2] : null;
+  const latestDeath = deathSeries[deathSeries.length - 1] || null;
+
+  // Build the per-zone snapshot: fold spelling variants into their canonical zone
+  // (summing the cumulative values), drop national/aggregate rows and zeros.
+  const zoneNames = new Set([...Object.keys(casesMap), ...Object.keys(deathsMap)]);
+  const merged = {};
+  for (const z of zoneNames) {
+    if (z.toUpperCase() === 'DRC') continue;
+    const cases = casesMap[z]?.val || 0;
+    const deaths = deathsMap[z]?.val || 0;
+    if (cases <= 0 && deaths <= 0) continue;
+    const key = z === 'NA' ? 'Unassigned (zone pending)' : canonical(z);
+    if (!merged[key]) merged[key] = { name: key, cases: 0, deaths: 0 };
+    merged[key].cases += cases;
+    merged[key].deaths += deaths;
+  }
+  const zones = Object.values(merged).sort((a, b) => b.cases - a.cases);
+
+  const latestDate = latestNat ? latestNat.date
+    : Object.values(casesMap).reduce((mx, v) => v.date > mx ? v.date : mx, '');
+
+  return {
+    zones,
+    latestDate,
+    national: {
+      cases: latestNat ? latestNat.val : zones.reduce((s, z) => s + z.cases, 0),
+      deaths: latestDeath ? latestDeath.val : zones.reduce((s, z) => s + z.deaths, 0),
+      prevCases: prevNat ? prevNat.val : null,
+      prevDate: prevNat ? prevNat.date : null
+    }
+  };
+}
+
+// Compute whether the featured feed is still actively updating. Returns the age of
+// the most recent data point in days and a live/stale verdict against the window.
+function dataFreshness(latestDate, windowDays) {
+  if (!latestDate) return { live: false, days: null };
+  const ld = new Date(latestDate + 'T00:00:00');
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const days = Math.max(0, Math.round((today - ld) / 86400000));
+  return { live: days <= windowDays, days };
 }
 
 // ════════════════════════════════════════════════════════
@@ -1000,7 +1134,7 @@ function renderGlobal(results) {
     sub.innerHTML = `
       <div class="outbreak-subheader">
         <span class="outbreak-title">${cfg.name}</span>
-        <span class="status-badge ${badgeClass}">${badgeText}</span>
+        <span class="status-badge ${badgeClass}" id="outbreakStatus-${i}">${badgeText}</span>
         <span class="outbreak-meta">${cfg.lastUpdatedNote}</span>
       </div>
       ${!isActive && cfg.concludedDate ? `<div class="concluded-banner">⚠ Tracking concluded ${fmtDate(cfg.concludedDate)}</div>` : ''}
@@ -1014,72 +1148,86 @@ function renderGlobal(results) {
     if (result.status === 'fulfilled') {
       renderOutbreakData(cfg, result.value, i);
     } else {
-      $(`outbreakBody-${i}`).innerHTML = `<div class="error-block">⚠ ${result.reason?.message || 'Failed to load linelist data'}</div>`;
+      $(`outbreakBody-${i}`).innerHTML = `<div class="error-block">⚠ ${result.reason?.message || 'Failed to load outbreak feed'}</div>`;
     }
   });
 
-  // Update summary
+  // Update summary bar from the primary featured outbreak
   const first = results[0];
   if (first?.status === 'fulfilled') {
-    const rows = first.value;
-    const cfg = FEATURED_OUTBREAKS[0];
-    const valid = rows.filter(r => {
-      const s = (r[cfg.caseStatusField] || '').trim();
-      return cfg.confirmedStatuses.some(c => s.toLowerCase() === c.toLowerCase());
-    });
-    $('sumHantaCases').textContent = valid.length;
-    $('sumHantaUpdated').textContent = 'confirmed + probable';
+    const data = first.value;
+    const fresh = dataFreshness(data.latestDate, FEATURED_OUTBREAKS[0].freshnessWindowDays);
+    $('sumOutbreakCases').textContent = fmt(data.national.cases);
+    $('sumOutbreakUpdated').textContent = fresh.live
+      ? `live · ${fmtDate(data.latestDate)}`
+      : `STALE · ${fresh.days}d old`;
+  } else {
+    $('sumOutbreakCases').textContent = '—';
   }
 }
 
-function renderOutbreakData(cfg, rows, idx) {
+function renderOutbreakData(cfg, data, idx) {
   const target = $(`outbreakBody-${idx}`);
-  if (!rows || rows.length === 0) {
-    target.innerHTML = '<div class="no-data">No data found in linelist.</div>';
+  const zones = data?.zones || [];
+  if (!zones.length) {
+    target.innerHTML = '<div class="no-data">No case data found in feed.</div>';
     return;
   }
 
-  // Filter to confirmed + probable
-  const valid = rows.filter(r => {
-    const s = (r[cfg.caseStatusField] || '').trim();
-    return cfg.confirmedStatuses.some(c => s.toLowerCase() === c.toLowerCase());
-  });
+  const nat = data.national;
+  const fresh = dataFreshness(data.latestDate, cfg.freshnessWindowDays);
 
-  // Aggregate by country
-  const countryMap = {};
-  for (const row of valid) {
-    const country = (row[cfg.countryField] || 'Unknown').trim() || 'Unknown';
-    if (!countryMap[country]) countryMap[country] = { total: 0, deaths: 0, ongoing: 0 };
-    countryMap[country].total++;
-    const outcome = (row[cfg.outcomeField] || '').toLowerCase();
-    if (outcome.includes('death') || outcome.includes('died')) countryMap[country].deaths++;
-    else if (outcome.includes('ongoing') || outcome.includes('recover')) countryMap[country].ongoing++;
+  // Flip the subheader status chip to reflect live vs stale feed state.
+  const chip = $(`outbreakStatus-${idx}`);
+  if (chip) {
+    chip.className = 'status-badge ' + (fresh.live ? 'status-live' : 'status-stale');
+    chip.textContent = fresh.live ? '● Live feed' : '● Stale feed';
   }
 
-  const sorted = Object.entries(countryMap).sort((a, b) => b[1].total - a[1].total);
-  const maxCount = sorted[0]?.[1]?.total || 1;
-  const total = valid.length;
+  // ── Data-freshness banner: the explicit live / needs-replacement indicator ──
+  const ageStr = fresh.days === null ? 'unknown'
+    : fresh.days === 0 ? 'today'
+    : fresh.days + ' day' + (fresh.days === 1 ? '' : 's') + ' ago';
+  const banner = fresh.live
+    ? `<div class="freshness-banner freshness-live">
+         <span class="freshness-dot live"></span>
+         <span><strong>LIVE — DATA IS CURRENT.</strong> Most recent INSP SitRep data point: <strong>${fmtDate(data.latestDate)}</strong> (${ageStr}).
+         This section auto-flips to a STALE warning if the feed goes <strong>${cfg.freshnessWindowDays}+ days</strong> without a new update, which is your signal to have this outbreak replaced.</span>
+       </div>`
+    : `<div class="freshness-banner freshness-stale">
+         <span class="freshness-dot stale"></span>
+         <span><strong>STALE — TIME TO REPLACE THIS SECTION.</strong> No new data for <strong>${fresh.days} days</strong> (latest point ${fmtDate(data.latestDate)}; freshness window is ${cfg.freshnessWindowDays} days).
+         The ${cfg.name} feed appears to have stopped updating. Ask Claude to re-evaluate the global outbreak landscape and swap in the current priority outbreak.</span>
+       </div>`;
 
-  const rows2 = sorted.map(([country, v]) => {
-    const barW = Math.round((v.total / maxCount) * 100);
-    const cfr = v.total > 0 ? ((v.deaths / v.total) * 100).toFixed(0) + '%' : '—';
+  const maxCount = zones[0].cases || 1;
+  const zoneRows = zones.map(z => {
+    const barW = Math.round((z.cases / maxCount) * 100);
+    const cfr = z.cases > 0 ? ((z.deaths / z.cases) * 100).toFixed(0) + '%' : '—';
     return `<tr>
-      <td>${country}</td>
-      <td>${v.total}</td>
-      <td>${v.deaths > 0 ? v.deaths + ' (' + cfr + ')' : '0'}</td>
+      <td>${z.name}</td>
+      <td>${fmt(z.cases)}</td>
+      <td>${z.deaths > 0 ? fmt(z.deaths) + ' (' + cfr + ')' : '0'}</td>
       <td class="bar-cell"><div class="bar-bg"><div class="bar-fill" style="width:${barW}%"></div></div></td>
     </tr>`;
   }).join('');
 
+  const natCfr = nat.cases > 0 ? ((nat.deaths / nat.cases) * 100).toFixed(1) + '%' : '—';
+  const newCases = (nat.prevCases !== null) ? nat.cases - nat.prevCases : null;
+
   target.innerHTML = `
     <div class="country-table-wrap">
-      <p style="font-size:0.75rem;color:var(--text-muted);margin-bottom:12px">
-        Showing ${total} confirmed/probable cases across ${sorted.length} location${sorted.length !== 1 ? 's' : ''}.
+      ${banner}
+      <p style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:12px">
+        <strong>${fmt(nat.cases)}</strong> confirmed cases · <strong>${fmt(nat.deaths)}</strong> deaths · CFR <strong>${natCfr}</strong>
+        across ${zones.length} affected health zone${zones.length !== 1 ? 's' : ''}.
+        ${newCases !== null && newCases >= 0 ? `<strong>+${fmt(newCases)}</strong> new confirmed since ${fmtDate(nat.prevDate)}. ` : ''}
         Pathogen: <em>${cfg.pathogenDesc}</em>. Tracking started ${fmtDate(cfg.trackingStarted)}.
+        Source: <a href="${cfg.sourceUrl}" target="_blank" rel="noopener" style="color:var(--accent)">${cfg.sourceName}</a>.
       </p>
       <table class="country-table">
-        <thead><tr><th>Country / Location</th><th>Cases</th><th>Deaths (CFR)</th><th></th></tr></thead>
-        <tbody>${rows2}</tbody>
+        <thead><tr><th>Health Zone</th><th>Confirmed Cases</th><th>Deaths (CFR)</th><th></th></tr></thead>
+        <tbody>${zoneRows}</tbody>
       </table>
     </div>
   `;
@@ -1188,15 +1336,15 @@ async function initDashboard() {
 
   // Fetch all in parallel
   const cdcPromise = fetchCDC();
-  const hantaPromises = FEATURED_OUTBREAKS.map(cfg => fetchHanta(cfg));
+  const outbreakPromises = FEATURED_OUTBREAKS.map(cfg => fetchOutbreak(cfg));
   const whoPromise = fetchWHO();
 
-  const [cdcResult, ...hantaResults] = await Promise.allSettled([
+  const [cdcResult, ...outbreakResults] = await Promise.allSettled([
     cdcPromise,
-    ...hantaPromises,
+    ...outbreakPromises,
     whoPromise
   ]);
-  const whoResult = hantaResults.pop();
+  const whoResult = outbreakResults.pop();
 
   // Render CDC
   try {
@@ -1214,10 +1362,10 @@ async function initDashboard() {
 
   // Render Global
   try {
-    renderGlobal(hantaResults);
+    renderGlobal(outbreakResults);
   } catch (err) {
     $('globalSection').innerHTML = `<div class="error-block">⚠ Global outbreak data unavailable: ${err.message}</div>`;
-    $('sumHantaCases').textContent = '—';
+    $('sumOutbreakCases').textContent = '—';
   }
 
   // Render WHO
