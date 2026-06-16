@@ -1,6 +1,6 @@
 # Outbreak Monitor
 
-A real-time disease outbreak surveillance dashboard that aggregates data from three public health sources into a single, self-contained web page. It displays US weekly notifiable-disease counts from CDC NNDSS, individual-level outbreak records from Global.health linelists, and the 20 most recent Disease Outbreak News alerts from WHO — all rendered client-side with no backend or build step required.
+A real-time disease outbreak surveillance dashboard that aggregates data from three public health sources into a single, self-contained web page. It displays US weekly notifiable-disease counts from CDC NNDSS, a detailed breakdown of one current priority outbreak (with a live data-freshness indicator), and the 20 most recent Disease Outbreak News alerts from WHO — all rendered client-side with no backend or build step required.
 
 **Live site:** [https://chrisv007.github.io/outbreak-monitor/](https://chrisv007.github.io/outbreak-monitor/)
 
@@ -10,8 +10,8 @@ A real-time disease outbreak surveillance dashboard that aggregates data from th
 
 | Source | Attribution | What it provides |
 |---|---|---|
-| **CDC NNDSS** | Centers for Disease Control and Prevention, National Notifiable Diseases Surveillance System | Weekly case counts by disease and state, served via the Socrata JSON API |
-| **Global.health** | Global.health initiative | Individual-level linelist records for selected outbreak events |
+| **CDC NNDSS** | Centers for Disease Control and Prevention, National Notifiable Diseases Surveillance System | Weekly case counts by disease and state, served via the Socrata JSON API. Minnesota is pinned and highlighted in every state breakdown, with a dedicated Minnesota year-to-date tile in the summary bar. |
+| **Global Priority Outbreaks** | Source varies by featured outbreak (currently INRB-UMIE / INSP SitRep pipeline for Ebola BDBV 2026) | Detailed case/death breakdown of one current high-priority outbreak, with a live/stale data-freshness banner that signals when the feed needs replacing |
 | **WHO DON** | World Health Organization, Disease Outbreak News | Official outbreak alerts and situation reports |
 
 ---
