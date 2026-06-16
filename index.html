@@ -310,6 +310,29 @@ main { padding: 24px 0 48px; }
 .state-table td:first-child { font-family: 'DM Sans', sans-serif; font-size: 0.78rem; }
 .state-table tr:last-child td { border-bottom: none; }
 
+/* Minnesota: pinned + highlighted in every state breakdown */
+.state-table tr.mn-row td {
+  background: #EEF2E8;
+  font-weight: 600;
+  color: var(--text-primary);
+  border-bottom: 1px solid #C9D6BC;
+}
+.state-table tr.mn-row td:first-child { box-shadow: inset 3px 0 0 var(--badge-active); }
+.mn-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: var(--badge-active);
+  background: #DCE6D2;
+  padding: 1px 5px;
+  border-radius: 999px;
+  letter-spacing: 0.05em;
+  vertical-align: middle;
+}
+
+/* Minnesota summary-bar item accent */
+.summary-item-mn .num { color: #C7D9B4; }
+
 /* ── Global Outbreak Section ── */
 .outbreak-subsection {
   background: var(--card-bg);
@@ -613,6 +636,11 @@ footer a { color: var(--text-secondary); }
         <div class="num" id="sumUsCases">—</div>
         <div class="label">US YTD cases tracked</div>
       </div>
+      <div class="summary-item summary-item-mn">
+        <div class="num" id="sumMnCases">—</div>
+        <div class="label">📍 Minnesota YTD (tracked)</div>
+        <div class="updated" id="sumMnUpdated"></div>
+      </div>
       <div class="summary-item">
         <div class="num" id="sumOutbreakCases">—</div>
         <div class="label">Ebola BDBV confirmed (DRC)</div>
@@ -771,6 +799,13 @@ function matchDisease(label) {
     if (lower.includes(d.key)) return d;
   }
   return null;
+}
+
+// Recognise the Minnesota reporting area regardless of how the NNDSS feed labels
+// it (full name or postal abbreviation, any case).
+function isMinnesota(area) {
+  const u = String(area || '').trim().toUpperCase();
+  return u === 'MINNESOTA' || u === 'MN';
 }
 
 function trendClass(pctVal) {
@@ -1034,16 +1069,26 @@ function renderCDC(cdcData) {
     return;
   }
 
-  let trendingUp = 0, totalYtd = 0;
+  let trendingUp = 0, totalYtd = 0, mnYtd = 0, mnDiseaseCount = 0;
   diseases.forEach(d => {
     totalYtd += d.ytdCurrent;
     const p = pct(d.ytdCurrent, d.ytdPrevious);
     if (trendClass(p) === 'up') trendingUp++;
+    // Roll up Minnesota's year-to-date cases across all tracked diseases.
+    const mnState = Object.entries(d.states).find(([k]) => isMinnesota(k));
+    if (mnState && mnState[1].ytd > 0) {
+      mnYtd += mnState[1].ytd;
+      mnDiseaseCount++;
+    }
   });
 
   $('sumTrendingUp').textContent = trendingUp;
   $('sumUsCases').textContent = fmt(totalYtd);
   $('sumCdcUpdated').textContent = week ? `CDC week ${week}, ${year}` : ('as of ' + now());
+  $('sumMnCases').textContent = fmt(mnYtd);
+  $('sumMnUpdated').textContent = mnDiseaseCount
+    ? `across ${mnDiseaseCount} tracked disease${mnDiseaseCount !== 1 ? 's' : ''}`
+    : 'no tracked cases';
 
   const grid = document.createElement('div');
   grid.className = 'cards-grid';
@@ -1054,13 +1099,22 @@ function renderCDC(cdcData) {
     const pctStr = p === null ? 'N/A' : (p >= 0 ? '+' : '') + p.toFixed(0) + '%';
     const pctClass = p === null ? 'pct-stable' : (p > 10 ? 'pct-up' : p < -10 ? 'pct-down' : 'pct-stable');
 
-    const stateList = Object.entries(d.states)
-      .filter(([k]) => k !== 'UNITED STATES' && k !== 'United States' && k !== 'U.S. TOTAL' && k !== 'U.S. Total')
+    // Build the state breakdown. Minnesota is always pinned to the top and
+    // highlighted so it is visible for every disease, even when it falls outside
+    // the top 20 by case count (or has no reported row, shown as 0).
+    const usAggregates = ['UNITED STATES', 'U.S. TOTAL'];
+    const allStates = Object.entries(d.states)
+      .filter(([k]) => !usAggregates.includes(k.toUpperCase()));
+    const mnEntry = allStates.find(([k]) => isMinnesota(k));
+    const otherStates = allStates
+      .filter(([k]) => !isMinnesota(k))
       .sort((a, b) => b[1].ytd - a[1].ytd)
       .slice(0, 20);
+    const mnData = mnEntry ? mnEntry[1] : { current: 0, ytd: 0 };
+    const stateList = [['Minnesota', mnData, true], ...otherStates.map(([k, v]) => [k, v, false])];
 
-    const stateRows = stateList.map(([state, sv]) =>
-      `<tr><td>${state}</td><td>${fmt(sv.current)}</td><td>${fmt(sv.ytd)}</td></tr>`
+    const stateRows = stateList.map(([state, sv, isMn]) =>
+      `<tr${isMn ? ' class="mn-row"' : ''}><td>${isMn ? '📍 ' : ''}${state}${isMn ? ' <span class="mn-badge">MN</span>' : ''}</td><td>${fmt(sv.current)}</td><td>${fmt(sv.ytd)}</td></tr>`
     ).join('');
 
     const card = document.createElement('div');

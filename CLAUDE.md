@@ -43,6 +43,13 @@ Everything runs client-side. There is no backend, no build step, and no dependen
 - The dataset is exposed as both CSV and JSON on Socrata; the two formats use different field names. The JSON field names above are the ones confirmed to work.
 - Aggregate rows (e.g. `TOTAL`, `U.S. TOTAL`, and US Census regional labels like `NEW ENGLAND`, `MIDDLE ATLANTIC`, `EAST NORTH CENTRAL`, `WEST NORTH CENTRAL`, `SOUTH ATLANTIC`, `EAST SOUTH CENTRAL`, `WEST SOUTH CENTRAL`, `MOUNTAIN`, `PACIFIC`) appear in the dataset alongside state-level rows and will produce double-counting if included. Filter them out client-side.
 
+**Minnesota focus:** This dashboard gives Minnesota special prominence. In every disease
+card's state breakdown, the Minnesota row is pinned to the top and highlighted (`.mn-row`),
+shown even when MN is outside the top 20 states or has no reported row (rendered as 0). The
+summary bar also carries a "Minnesota YTD (tracked)" tile rolling up MN year-to-date cases
+across all tracked diseases. The `isMinnesota()` helper matches the reporting area
+case-insensitively as either `MINNESOTA` or `MN`, since the live field could use either.
+
 **Critical two-step query pattern:**
 
 Step 1 — find the latest available week for the current year:
@@ -142,3 +149,4 @@ If the response is an empty array `[]`, the query is wrong. Do not commit until 
 | **PR #6** | Codex-assisted fix. Implemented two-step max(week) query to find the latest available MMWR week before fetching rows. Corrected field names to the confirmed JSON schema: `year`, `week`, `states`, `label`, `m1`, `m2`, `m3`, `m4`. Added client-side exclusion of aggregate geographic rows (TOTAL, U.S. TOTAL, regional census group names) to prevent double-counting. Fixed WHO DON query to use `$orderby=PublicationDateAndTime desc` so the 20 most recent alerts are returned instead of the 20 oldest. |
 | **Hantavirus DOM fix** | Corrected DOM append order for the hantavirus section; elements were being inserted out of sequence, causing the panel to render incorrectly. |
 | **Featured-outbreak swap (Ebola BDBV 2026)** | Re-evaluated the Global Priority Outbreaks slot. The MV Hondius hantavirus outbreak concluded ~2026-05-11 (13 cases, source feed static), so it was no longer the most relevant outbreak. Replaced it with the Ebola Bundibugyo virus outbreak in DRC & Uganda (WHO PHEIC 2026-05-17; 782 confirmed / 181 deaths as of 2026-06-13; largest BDBV outbreak on record). New source: `INRB-UMIE/Ebola_DRC_2026` INSP SitRep CSVs, aggregated by health zone with `aliases.csv` canonicalization. Added a `dataFreshness()` live/stale indicator (green LIVE banner vs red STALE/replace banner, `freshnessWindowDays=14`) so it is always obvious when the feed has gone stale and the slot needs a new outbreak. Verified all feeds return HTTP 200 with real rows; national totals match WHO. |
+| **Minnesota highlight** | Gave Minnesota special prominence in the US NNDSS section. Each disease card's state breakdown now pins Minnesota to the top and highlights it (always shown, even at 0 or outside the top 20). Added a "Minnesota YTD (tracked)" summary-bar tile that rolls up MN year-to-date cases across all tracked diseases. New `isMinnesota()` helper matches `MINNESOTA`/`MN` case-insensitively. Note: `data.cdc.gov` was not reachable from the build environment (network egress policy), so this display-only change was not live-curl verified; it does not alter the API query and the matcher tolerates either area representation. |
