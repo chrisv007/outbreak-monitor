@@ -10,7 +10,7 @@ A real-time disease outbreak surveillance dashboard that aggregates data from th
 
 | Source | Attribution | What it provides |
 |---|---|---|
-| **CDC NNDSS** | Centers for Disease Control and Prevention, National Notifiable Diseases Surveillance System | Weekly case counts by disease and state, served via the Socrata JSON API. Minnesota is pinned and highlighted in every state breakdown, with a dedicated Minnesota year-to-date tile in the summary bar. |
+| **CDC NNDSS** | Centers for Disease Control and Prevention, National Notifiable Diseases Surveillance System | Weekly case counts by disease and state, served via the Socrata JSON API. National and regional rollup rows (e.g. `U.S. Residents`, `U.S. Total`, census-division groups) are filtered out client-side so headline totals are not double-counted against the per-state rows. Minnesota is pinned and highlighted in every state breakdown, with a dedicated Minnesota year-to-date tile in the summary bar. |
 | **Global Priority Outbreaks** | Source varies by featured outbreak (currently INRB-UMIE / INSP SitRep pipeline for Ebola BDBV 2026) | Detailed case/death breakdown of one current high-priority outbreak, with a live/stale data-freshness banner that signals when the feed needs replacing |
 | **WHO DON** | World Health Organization, Disease Outbreak News | Official outbreak alerts and situation reports |
 

@@ -808,6 +808,35 @@ function isMinnesota(area) {
   return u === 'MINNESOTA' || u === 'MN';
 }
 
+// Normalise a reporting-area label for aggregate detection: uppercase, delete
+// periods, turn hyphens into spaces, collapse whitespace. This folds punctuation
+// variants of the same label onto one canonical form, so "U.S. Residents",
+// "US Residents", and "Non-U.S. Residents" become "US RESIDENTS" and
+// "NON US RESIDENTS" respectively. Without this, a bare uppercase compare misses
+// the dotted live labels and lets national rollup rows through, double-counting
+// them against the per-state sums.
+function normalizeArea(area) {
+  return String(area || '')
+    .toUpperCase()
+    .replace(/\./g, '')   // drop periods: "U.S." -> "US"
+    .replace(/-/g, ' ')   // hyphens to spaces: "NON-US" -> "NON US"
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Aggregate / rollup reporting areas that are NOT individual states and must be
+// excluded from per-state sums, or the headline totals double-count. Stored in
+// normalized (period-free) form; compare with isAggregateArea().
+const AGGREGATE_AREAS = new Set([
+  'TOTAL', 'US TOTAL', 'UNITED STATES', 'US RESIDENTS', 'US TERRITORIES', 'NON US RESIDENTS',
+  'NEW ENGLAND', 'MIDDLE ATLANTIC', 'EAST NORTH CENTRAL', 'WEST NORTH CENTRAL', 'SOUTH ATLANTIC',
+  'EAST SOUTH CENTRAL', 'WEST SOUTH CENTRAL', 'MOUNTAIN', 'PACIFIC'
+]);
+
+function isAggregateArea(area) {
+  return AGGREGATE_AREAS.has(normalizeArea(area));
+}
+
 function trendClass(pctVal) {
   if (pctVal === null) return 'stable';
   if (pctVal > 10) return 'up';
@@ -1007,11 +1036,6 @@ async function fetchWHO() {
 function processCDC(cdcPayload) {
   const { rows = [], year = String(new Date().getFullYear()), week = null } = cdcPayload || {};
   const diseaseMap = {};
-  const aggregateAreas = new Set([
-    'TOTAL', 'U.S. TOTAL', 'UNITED STATES', 'US RESIDENTS', 'US TERRITORIES', 'NON-US RESIDENTS',
-    'NEW ENGLAND', 'MIDDLE ATLANTIC', 'EAST NORTH CENTRAL', 'WEST NORTH CENTRAL', 'SOUTH ATLANTIC',
-    'EAST SOUTH CENTRAL', 'WEST SOUTH CENTRAL', 'MOUNTAIN', 'PACIFIC'
-  ]);
 
   for (const row of rows) {
     const label = row.label || '';
@@ -1019,7 +1043,9 @@ function processCDC(cdcPayload) {
     if (!match) continue;
 
     const area = String(row.states || '').trim() || 'Unknown';
-    if (aggregateAreas.has(area.toUpperCase())) continue;
+    // Skip national/regional rollup rows (e.g. "U.S. Residents", "U.S. Total",
+    // census-division groups). Including them double-counts against state rows.
+    if (isAggregateArea(area)) continue;
 
     const key = match.display;
     if (!diseaseMap[key]) {
@@ -1101,10 +1127,11 @@ function renderCDC(cdcData) {
 
     // Build the state breakdown. Minnesota is always pinned to the top and
     // highlighted so it is visible for every disease, even when it falls outside
-    // the top 20 by case count (or has no reported row, shown as 0).
-    const usAggregates = ['UNITED STATES', 'U.S. TOTAL'];
+    // the top 20 by case count (or has no reported row, shown as 0). Aggregate
+    // rollup areas are already dropped upstream in processCDC; this is a
+    // defensive second guard so none can ever surface as a pseudo-state row.
     const allStates = Object.entries(d.states)
-      .filter(([k]) => !usAggregates.includes(k.toUpperCase()));
+      .filter(([k]) => !isAggregateArea(k));
     const mnEntry = allStates.find(([k]) => isMinnesota(k));
     const otherStates = allStates
       .filter(([k]) => !isMinnesota(k))
