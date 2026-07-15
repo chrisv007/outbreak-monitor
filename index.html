@@ -169,6 +169,16 @@ main { padding: 24px 0 48px; }
   font-size: 0.78rem;
   color: var(--text-secondary);
 }
+.cdc-note {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  opacity: 0.85;
+  margin: 2px 0 10px;
+  font-variant-numeric: tabular-nums;
+}
+.cdc-note:empty {
+  display: none;
+}
 
 /* ── Cards Grid ── */
 .cards-grid {
@@ -672,6 +682,7 @@ footer a { color: var(--text-secondary); }
         <span class="section-title">🇺🇸 US Outbreak Surveillance</span>
         <span class="section-desc">CDC NNDSS · conditions running above last year, auto-flagged · click a card to expand state breakdown</span>
       </div>
+      <div class="cdc-note" id="cdcNote"></div>
       <div id="cdcSection">
         <div class="loading-block"><div class="spinner"></div>Loading CDC NNDSS data…</div>
       </div>
@@ -708,7 +719,7 @@ footer a { color: var(--text-secondary); }
     <a href="https://github.com/INRB-UMIE/Ebola_DRC_2026" target="_blank">INRB-UMIE Ebola DRC 2026</a> ·
     <a href="https://www.who.int/emergencies/disease-outbreak-news" target="_blank">WHO DON</a> ·
     For situational awareness only — not a clinical resource.
-    <div class="build-timestamp">Dashboard page last modified: 2026-07-15 08:31 AM CDT</div>
+    <div class="build-timestamp">Dashboard page last modified: 2026-07-15 08:51 AM CDT</div>
   </div>
 </footer>
 
@@ -784,15 +795,22 @@ const FEATURED_OUTBREAKS = [
 // public-health surveillance cares about:
 //   1. Strong surge   — YTD >= 1.2x last year (>=20% up), shown regardless of
 //                        volume so genuine low-base surges still appear.
-//   2. Sustained rise — YTD >= 1.15x last year (>=15% up) AND at least
+//   2. Sustained rise — YTD >= 1.10x last year (>=10% up) AND at least
 //                        SURFACE_MIN_EXCESS excess cases over last year, so a
-//                        high-burden condition just under the surge bar is not
-//                        dropped, while trivial small-base blips still are.
-// Flat endemic background (ratio < 1.15) fails both paths and falls away on its
-// own; ranking by excess and the card cap keep the panel focused.
+//                        high-burden condition running under the surge bar is
+//                        not dropped, while trivial small-base blips still are.
+// This band sits a full ten points below the surge floor on purpose: an earlier
+// version set it at 1.15, one sliver below the 1.2 surge bar, so path 2 could
+// only ever admit conditions in the tiny [1.15, 1.20) window that path 1 did not
+// already cover. That window is rarely populated, so the "absolute-burden" path
+// changed almost nothing on the live panel and any high-burden condition rising
+// by 10-15% was still dropped. Widening the floor to 1.10 gives the burden
+// signal a real band to act in. Flat endemic background (ratio < 1.10) fails
+// both paths and falls away on its own; ranking by excess and the card cap keep
+// the panel focused.
 const SURFACE_MIN_YTD = 5;          // ignore 1-4 case statistical noise
 const SURFACE_SURGE_RATIO = 1.2;    // path 1: >=20% above last year, any volume
-const SURFACE_SUSTAINED_RATIO = 1.15; // path 2: >=15% above last year ...
+const SURFACE_SUSTAINED_RATIO = 1.10; // path 2: >=10% above last year ...
 const SURFACE_MIN_EXCESS = 50;      // ... if it also carries >=50 excess cases
 const SURFACE_MAX_CARDS = 24;       // show at most this many, strongest first
 
@@ -1122,13 +1140,23 @@ function processCDC(cdcPayload) {
     d.states[area].ytd += ytdCurrent;
   }
 
+  const all = Object.values(diseaseMap);
+  const surfaced = all
+    .filter(isSurfaced)
+    .sort((a, b) => outbreakExcess(b) - outbreakExcess(a));
+
   return {
     // Surface only conditions running above their prior-year baseline, ranked by
     // how many excess cases they are carrying, capped so the panel stays focused.
-    diseases: Object.values(diseaseMap)
-      .filter(isSurfaced)
-      .sort((a, b) => outbreakExcess(b) - outbreakExcess(a))
-      .slice(0, SURFACE_MAX_CARDS),
+    diseases: surfaced.slice(0, SURFACE_MAX_CARDS),
+    // Selection counts, so the panel can show the inclusion logic at work. This
+    // matters because data.cdc.gov is not reachable from the build environment
+    // (egress policy), so the thresholds cannot be tuned against the live feed
+    // here — only in the viewer's browser. Surfacing that the gate evaluated N
+    // conditions and kept M turns "why is the panel almost empty?" from a guess
+    // into something you can read off the page.
+    evaluated: all.length,
+    surfacedCount: surfaced.length,
     year,
     prevYear: String(Number(year) - 1),
     week
@@ -1140,6 +1168,24 @@ function renderCDC(cdcData) {
   const year = cdcData?.year || String(new Date().getFullYear());
   const prevYear = cdcData?.prevYear || String(Number(year) - 1);
   const week = cdcData?.week;
+
+  // Surfacing diagnostic: how many conditions the gate evaluated, how many it
+  // kept, and how many are shown after the card cap. Makes the inclusion logic
+  // legible in the browser (the only place the live CDC feed is reachable).
+  const evaluated = cdcData?.evaluated ?? 0;
+  const surfacedCount = cdcData?.surfacedCount ?? diseases.length;
+  const noteEl = $('cdcNote');
+  if (noteEl) {
+    if (evaluated > 0) {
+      const shownNote = surfacedCount > diseases.length ? ` · showing top ${diseases.length}` : '';
+      noteEl.textContent =
+        `Evaluated ${fmt(evaluated)} notifiable condition${evaluated !== 1 ? 's' : ''} · ` +
+        `${fmt(surfacedCount)} running above prior-year baseline${shownNote}`;
+    } else {
+      noteEl.textContent = '';
+    }
+  }
+
   if (!diseases || diseases.length === 0) {
     $('cdcSection').innerHTML = '<div class="no-data">No notifiable conditions are running above their prior-year baseline for the latest MMWR week.</div>';
     return;
@@ -1494,6 +1540,7 @@ async function initDashboard() {
     $('cdcSection').innerHTML = `<div class="error-block">⚠ CDC data request failed: ${err.message}. Check the NNDSS API query and dataset availability.</div>`;
     $('sumTrendingUp').textContent = '—';
     $('sumUsCases').textContent = '—';
+    if ($('cdcNote')) $('cdcNote').textContent = '';
   }
 
   // Render Global
