@@ -66,13 +66,18 @@ baseline, using fields the feed already provides:
   - *emergent* — `ytdPrevious`/m4 `== 0` with current cases (a new/re-emergent condition); or
   - *strong surge* (path 1) — `ytdCurrent / ytdPrevious >= SURFACE_SURGE_RATIO` (1.2 = at
     least 20% above last year), shown regardless of volume so genuine low-base surges appear; or
-  - *sustained rise* (path 2) — `ratio >= SURFACE_SUSTAINED_RATIO` (1.15 = at least 15% above
+  - *sustained rise* (path 2) — `ratio >= SURFACE_SUSTAINED_RATIO` (1.10 = at least 10% above
     last year) **and** `outbreakExcess(d) >= SURFACE_MIN_EXCESS` (50 excess cases).
   Path 2 exists because a single ratio bar is magnitude-blind: without it a condition climbing
-  15-19% while carrying hundreds of excess cases (a large real-world burden) would be dropped,
-  while a tiny 12→19 jump surfaces at +58%. The `>= 1.15` guard on path 2 keeps the high-volume
-  endemic giants out — e.g. chlamydia up 1% is ~5,000 raw excess cases but ratio ≈ 1.01, so it
-  fails both paths. Flat endemic conditions (ratio < 1.15) fall away on their own.
+  10-19% while carrying dozens-to-hundreds of excess cases (a real-world burden) would be
+  dropped, while a tiny 12→19 jump surfaces at +58%. The `>= 1.10` guard on path 2 keeps the
+  high-volume endemic giants out — e.g. chlamydia up 1% is ~5,000 raw excess cases but ratio
+  ≈ 1.01, so it fails both paths. Flat endemic conditions (ratio < 1.10) fall away on their own.
+  **Keep this floor a real distance below the 1.2 surge bar.** It was originally 1.15 — only a
+  sliver under 1.2 — so path 2's *effective* reach was just the `[1.15, 1.20)` window that path 1
+  did not already cover. That window is rarely populated, so path 2 changed almost nothing on the
+  live panel (the "it didn't work" report), and any high-burden condition rising 10-15% was still
+  dropped. Widening to 1.10 gives the absolute-burden signal a band it can actually act in.
 - Rank by `outbreakExcess(d)` = `ytdCurrent - ytdPrevious` (excess cases over last year — an
   interpretable "how far above normal" measure that balances ratio and volume), cap at
   `SURFACE_MAX_CARDS` (24) so the panel stays focused.
@@ -84,6 +89,18 @@ baseline, using fields the feed already provides:
 The thresholds (`SURFACE_MIN_YTD`, `SURFACE_SURGE_RATIO`, `SURFACE_SUSTAINED_RATIO`,
 `SURFACE_MIN_EXCESS`, `SURFACE_MAX_CARDS`) are the only tuning knobs; adjust those rather
 than adding disease names.
+
+**Surfacing diagnostic (tune from real data, not guesses):** `data.cdc.gov` is unreachable
+from every build/session environment here (egress policy, 403 CONNECT), so the thresholds can
+never be validated against the live feed from inside a session — only in the viewer's browser,
+which *can* reach CDC. To make that possible, `processCDC()` returns `evaluated` (distinct
+conditions seen, aggregates excluded) and `surfacedCount` (how many passed `isSurfaced` before
+the card cap), and `renderCDC()` prints them into the `.cdc-note` line under the US section
+header ("Evaluated N notifiable conditions · M running above prior-year baseline · showing top
+K"). This turns "why is the panel almost empty?" from a guess into something readable off the
+live page: if `M` is small the data is genuinely quiet, if `M` is large but `K` is capped raise
+`SURFACE_MAX_CARDS`. Do not tune the ratio/excess knobs blind — read this line on the live site
+first.
 
 **Minnesota focus:** This dashboard gives Minnesota special prominence. In every disease
 card's state breakdown, the Minnesota row is pinned to the top and highlighted (`.mn-row`),
@@ -205,3 +222,4 @@ If the response is an empty array `[]`, the query is wrong. Do not commit until 
 | **Signal-based disease surfacing (remove hardcoded allowlist)** | Replaced the static `DISEASE_KEYWORDS` allowlist + `matchDisease()` substring filter with a data-driven outbreak signal. Root cause of the reported issue: the US NNDSS panel only rendered conditions whose label matched a pre-listed name, so the active cyclosporiasis outbreak (never in the list) could never surface — counter to the dashboard's purpose. The old allowlist did serve a real need (the feed carries 100+ conditions dominated by high-volume endemic disease, so showing everything by raw count would bury outbreak signal), but an identity filter is the wrong tool: it can never surface a *new* outbreak and needs a code edit per disease. New design: `processCDC()` aggregates every condition (aggregate areas still excluded), then `isSurfaced()` keeps those with `m3` YTD `>= SURFACE_MIN_YTD` (5) that are either emergent (`m4` prior-year YTD `== 0`) or surging (`m3/m4 >= SURFACE_SURGE_RATIO`, 1.2); results rank by excess-over-last-year (`m3 - m4`) and cap at `SURFACE_MAX_CARDS` (24). Flat endemic conditions drop out on their own; new outbreaks appear automatically with a "🆕 New this year" badge. Labels grouped via `cleanLabel()` to fold footnote markers. No API/query change — `fetchCDC` already pulls all rows for the latest week, so this is purely client-side selection using fields already in use. `data.cdc.gov` remains egress-blocked (403 CONNECT), so no live curl; verified with a Node simulation (cyclosporiasis + emergent measles + surging pertussis surface; flat chlamydia, sub-threshold salmonellosis, and below-floor noise are excluded; rollup rows stay out of per-condition sums) and a JS syntax check of the inline script. |
 | **Surfacing refinement (add absolute-burden path)** | The live panel was surfacing only ~4 conditions and felt a touch strict. Root cause: the sole inclusion gate was a *relative* ratio (`>= 1.2`), which is magnitude-blind — it over-shows big proportional jumps off a tiny base (Haemophilus type b, 12→19 = +58%, only 7 excess cases) while dropping a condition climbing 15-19% that carries hundreds of excess cases, the burden surveillance actually cares about. `outbreakExcess` was used only for ranking, never for inclusion. Fix: added a second inclusion path in `isSurfaced()`. Path 1 (strong surge) is unchanged — `ratio >= SURFACE_SURGE_RATIO` (1.2), any volume. Path 2 (sustained rise) surfaces a condition with `ratio >= SURFACE_SUSTAINED_RATIO` (1.15) **and** `outbreakExcess >= SURFACE_MIN_EXCESS` (50). The `>= 1.15` guard on path 2 is what keeps the high-volume endemic giants out: chlamydia up ~1% is ~5,000 raw excess cases but ratio ≈ 1.01, so it still fails both paths. Net effect: a few more genuinely high-burden climbers surface, the list stays focused, and trivial small-base blips (e.g. 40→46, excess 6) stay out. Purely client-side selection; no API/query change. `data.cdc.gov` remains egress-blocked (403 CONNECT), so verified with an expanded Node simulation (strong-surge, low-base surge, high-burden moderate climber, small-base blip, just-under-threshold climber, flat mega-STI, declining, and emergent cases all classify as expected) plus a JS syntax check. |
 | **Footer "last modified" build timestamp** | The user could not tell whether the live GitHub Pages deploy actually reflected the latest committed `index.html`, since prior sessions had made several changes and page-cache/deploy-lag made it ambiguous. Added a small `.build-timestamp` line at the bottom of the footer reading "Dashboard page last modified: `<date> <time> <CST|CDT>`" — a static string, not computed client-side, deliberately independent of the existing "Refresh" control (which reflects data-fetch time, not page build time). Documented as a mandatory-maintenance rule in the Working Style section: every commit touching `index.html` must update this string to the real current US Central time. No API/data logic touched. |
+| **Surfacing fix: PR #11 sustained-rise path was a near no-op** | Follow-up to PR #11, reported as "the change doesn't appear to have worked." PR #11 added path 2 (sustained rise) to `isSurfaced()` to catch high-burden conditions climbing under the 1.2 surge bar, but set its floor at `SURFACE_SUSTAINED_RATIO = 1.15` — only a sliver below 1.2. Path 1 already admits everything `>= 1.2`, so path 2's *effective* reach was just the razor-thin `[1.15, 1.20)` ratio window; that band is rarely populated in the live feed, so the surfaced-condition count barely moved and any high-burden condition rising 10-15% was still dropped. It behaved exactly as coded, but the code didn't do what the goal needed. Fix: lowered `SURFACE_SUSTAINED_RATIO` to `1.10`, giving the absolute-burden path a real 10-point band `[1.10, 1.20)` to act in while the floor still rejects flat endemic giants (chlamydia +1% → ratio ≈ 1.01, excluded; gonorrhea +8% → 1.08, excluded). Also added a surfacing diagnostic so this class of "it didn't visibly change anything" is debuggable *in the browser* (the only place the live CDC feed is reachable — the session env is egress-blocked, 403, so no prior session could ever validate thresholds against real data, the root reason repeated blind threshold nudges "didn't work"): `processCDC()` now returns `evaluated` + `surfacedCount`, rendered as the `.cdc-note` line under the US section header. Verified with an expanded Node simulation (the previously-dropped +12%/67-excess case now surfaces; chlamydia, gonorrhea +8%, small-base blips, declining, and below-floor all still excluded; 11/11 as expected) plus a JS syntax check. `data.cdc.gov` remains egress-blocked here (403 CONNECT), so no live curl was possible; the new diagnostic line is what confirms the effect on the live site. |
