@@ -768,9 +768,25 @@ const FEATURED_OUTBREAKS = [
 // A condition surfaces when it is clearly running above last year; the steady
 // endemic background (year-over-year ratio near 1) falls away on its own, and
 // there are no names to maintain when the next outbreak appears.
-const SURFACE_MIN_YTD = 5;         // ignore 1-4 case statistical noise
-const SURFACE_SURGE_RATIO = 1.2;   // YTD must run >= 1.2x the prior-year YTD ...
-const SURFACE_MAX_CARDS = 24;      // ... show at most this many, strongest first
+//
+// "Clearly running above last year" takes two paths, because a single ratio bar
+// is magnitude-blind — it over-shows big proportional jumps off a tiny
+// base (12 -> 19 cases is +58%) while missing a condition climbing 15-19% that
+// is nonetheless carrying hundreds of excess cases, which is exactly the burden
+// public-health surveillance cares about:
+//   1. Strong surge   — YTD >= 1.2x last year (>=20% up), shown regardless of
+//                        volume so genuine low-base surges still appear.
+//   2. Sustained rise — YTD >= 1.15x last year (>=15% up) AND at least
+//                        SURFACE_MIN_EXCESS excess cases over last year, so a
+//                        high-burden condition just under the surge bar is not
+//                        dropped, while trivial small-base blips still are.
+// Flat endemic background (ratio < 1.15) fails both paths and falls away on its
+// own; ranking by excess and the card cap keep the panel focused.
+const SURFACE_MIN_YTD = 5;          // ignore 1-4 case statistical noise
+const SURFACE_SURGE_RATIO = 1.2;    // path 1: >=20% above last year, any volume
+const SURFACE_SUSTAINED_RATIO = 1.15; // path 2: >=15% above last year ...
+const SURFACE_MIN_EXCESS = 50;      // ... if it also carries >=50 excess cases
+const SURFACE_MAX_CARDS = 24;       // show at most this many, strongest first
 
 // ════════════════════════════════════════════════════════
 //  UTILITIES
@@ -820,7 +836,10 @@ function outbreakExcess(d) {
 function isSurfaced(d) {
   if (d.ytdCurrent < SURFACE_MIN_YTD) return false;   // below the noise floor
   if (isEmergent(d)) return true;                     // new / re-emergent this year
-  return d.ytdCurrent / d.ytdPrevious >= SURFACE_SURGE_RATIO;
+  const ratio = d.ytdCurrent / d.ytdPrevious;
+  if (ratio >= SURFACE_SURGE_RATIO) return true;      // path 1: strong surge
+  // path 2: sustained rise carrying a substantial absolute case burden
+  return ratio >= SURFACE_SUSTAINED_RATIO && outbreakExcess(d) >= SURFACE_MIN_EXCESS;
 }
 
 // Recognise the Minnesota reporting area regardless of how the NNDSS feed labels
