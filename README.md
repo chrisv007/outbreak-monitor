@@ -20,6 +20,8 @@ A real-time disease outbreak surveillance dashboard that aggregates data from th
 
 The entire application is a single `index.html` file. It uses vanilla JavaScript to fetch data from the three sources above at page load, then builds and inserts DOM elements directly. There is no framework, no bundler, no npm install, and no server component. Deploying the dashboard means serving the file via GitHub Pages or any static host.
 
+The footer shows a **"Dashboard page last modified"** timestamp (Central time). This is a static string set by whoever last edited `index.html` — it is not computed from the visitor's clock or from data-refresh time, and it does not update on its own. Its only purpose is letting you compare the live GitHub Pages site against the latest commit to confirm the deploy has caught up. See CLAUDE.md for the update rule.
+
 ---
 
 ## Contributing
