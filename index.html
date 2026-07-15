@@ -634,7 +634,7 @@ footer a { color: var(--text-secondary); }
       </div>
       <div class="summary-item">
         <div class="num" id="sumUsCases">—</div>
-        <div class="label">US YTD cases tracked</div>
+        <div class="label">US YTD cases (flagged conditions)</div>
       </div>
       <div class="summary-item summary-item-mn">
         <div class="num" id="sumMnCases">—</div>
@@ -663,7 +663,7 @@ footer a { color: var(--text-secondary); }
     <div class="section">
       <div class="section-header">
         <span class="section-title">🇺🇸 US Outbreak Surveillance</span>
-        <span class="section-desc">CDC NNDSS · click a card to expand state breakdown</span>
+        <span class="section-desc">CDC NNDSS · conditions running above last year, auto-flagged · click a card to expand state breakdown</span>
       </div>
       <div id="cdcSection">
         <div class="loading-block"><div class="spinner"></div>Loading CDC NNDSS data…</div>
@@ -747,30 +747,30 @@ const FEATURED_OUTBREAKS = [
 ];
 
 // ════════════════════════════════════════════════════════
-//  DISEASE FILTER LIST — CDC NNDSS labels to include
+//  OUTBREAK SURFACING — signal-based, no hardcoded disease list
 // ════════════════════════════════════════════════════════
-const DISEASE_KEYWORDS = [
-  { key: 'hantavirus', display: 'Hantavirus' },
-  { key: 'novel influenza', display: 'Novel Influenza A' },
-  { key: 'mpox', display: 'Mpox' },
-  { key: 'monkeypox', display: 'Mpox' },
-  { key: 'ebola', display: 'Ebola' },
-  { key: 'marburg', display: 'Marburg' },
-  { key: 'lassa', display: 'Lassa Fever' },
-  { key: 'crimean', display: 'Crimean-Congo HF' },
-  { key: 'viral hemorrhagic', display: 'Viral Hemorrhagic Fever' },
-  { key: 'west nile', display: 'West Nile Virus' },
-  { key: 'dengue', display: 'Dengue' },
-  { key: 'measles', display: 'Measles' },
-  { key: 'polio', display: 'Polio' },
-  { key: 'poliovirus', display: 'Polio' },
-  { key: 'pertussis', display: 'Pertussis (Whooping Cough)' },
-  { key: 'tularemia', display: 'Tularemia' },
-  { key: 'plague', display: 'Plague' },
-  { key: 'yellow fever', display: 'Yellow Fever' },
-  { key: 'q fever', display: 'Q Fever' },
-  { key: 'anthrax', display: 'Anthrax' },
-];
+// The NNDSS weekly feed carries every nationally notifiable condition (100+),
+// and most of them are steady endemic background (chlamydia, gonorrhea,
+// salmonellosis, ...) whose case counts dwarf any emerging outbreak. This
+// section's job is to surface conditions that are ANOMALOUSLY ACTIVE right now.
+//
+// The dashboard used to do that with a static allowlist of disease names, but
+// an allowlist is the wrong tool for an outbreak monitor: any condition that is
+// not pre-listed can never appear, so a genuinely new outbreak (cyclosporiasis
+// is the case that exposed this) is silently dropped no matter how large it
+// gets. That defeats the purpose of the panel.
+//
+// Instead we let the data decide. Every condition in the live feed is scored by
+// how elevated its year-to-date count is versus the same period last year, using
+// fields the feed already provides: m3 (YTD current year) and m4 (YTD previous
+// year). Both are plain counts that sum correctly across states (unlike the
+// 52-week max), so the comparison stays valid at the national aggregate level.
+// A condition surfaces when it is clearly running above last year; the steady
+// endemic background (year-over-year ratio near 1) falls away on its own, and
+// there are no names to maintain when the next outbreak appears.
+const SURFACE_MIN_YTD = 5;         // ignore 1-4 case statistical noise
+const SURFACE_SURGE_RATIO = 1.2;   // YTD must run >= 1.2x the prior-year YTD ...
+const SURFACE_MAX_CARDS = 24;      // ... show at most this many, strongest first
 
 // ════════════════════════════════════════════════════════
 //  UTILITIES
@@ -793,12 +793,34 @@ const fmtDate = iso => {
 };
 const now = () => new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 
-function matchDisease(label) {
-  const lower = (label || '').toLowerCase();
-  for (const d of DISEASE_KEYWORDS) {
-    if (lower.includes(d.key)) return d;
-  }
-  return null;
+// Strip footnote markers and stray symbols from a raw NNDSS condition label so
+// that every state row for the same condition groups under one clean name.
+function cleanLabel(label) {
+  return String(label || '')
+    .replace(/[†‡§¶*]/g, '')
+    .replace(/\s+/g, ' ')
+    .replace(/\s*,\s*$/, '')
+    .trim();
+}
+
+// A condition with no cases in the prior-year period is newly emergent: there is
+// no baseline to divide by, so it is judged on magnitude alone.
+function isEmergent(d) {
+  return d.ytdPrevious <= 0 && d.ytdCurrent > 0;
+}
+
+// Excess cases over the same period last year — an interpretable measure of how
+// far above baseline a condition is running. Used to rank the surfaced cards so
+// the largest departures from normal float to the top.
+function outbreakExcess(d) {
+  return d.ytdCurrent - Math.max(0, d.ytdPrevious);
+}
+
+// Decide whether a condition is showing enough of an outbreak signal to surface.
+function isSurfaced(d) {
+  if (d.ytdCurrent < SURFACE_MIN_YTD) return false;   // below the noise floor
+  if (isEmergent(d)) return true;                     // new / re-emergent this year
+  return d.ytdCurrent / d.ytdPrevious >= SURFACE_SURGE_RATIO;
 }
 
 // Recognise the Minnesota reporting area regardless of how the NNDSS feed labels
@@ -1038,19 +1060,17 @@ function processCDC(cdcPayload) {
   const diseaseMap = {};
 
   for (const row of rows) {
-    const label = row.label || '';
-    const match = matchDisease(label);
-    if (!match) continue;
+    const display = cleanLabel(row.label);
+    if (!display) continue;
 
     const area = String(row.states || '').trim() || 'Unknown';
     // Skip national/regional rollup rows (e.g. "U.S. Residents", "U.S. Total",
     // census-division groups). Including them double-counts against state rows.
     if (isAggregateArea(area)) continue;
 
-    const key = match.display;
-    if (!diseaseMap[key]) {
-      diseaseMap[key] = {
-        display: key,
+    if (!diseaseMap[display]) {
+      diseaseMap[display] = {
+        display,
         currentWeek: 0,
         ytdCurrent: 0,
         ytdPrevious: 0,
@@ -1059,7 +1079,7 @@ function processCDC(cdcPayload) {
       };
     }
 
-    const d = diseaseMap[key];
+    const d = diseaseMap[display];
     const current = num(row.m1);
     const prev52 = num(row.m2);
     const ytdCurrent = num(row.m3);
@@ -1076,9 +1096,12 @@ function processCDC(cdcPayload) {
   }
 
   return {
+    // Surface only conditions running above their prior-year baseline, ranked by
+    // how many excess cases they are carrying, capped so the panel stays focused.
     diseases: Object.values(diseaseMap)
-      .filter(d => d.ytdCurrent > 0 || d.currentWeek > 0 || d.ytdPrevious > 0)
-      .sort((a, b) => b.ytdCurrent - a.ytdCurrent),
+      .filter(isSurfaced)
+      .sort((a, b) => outbreakExcess(b) - outbreakExcess(a))
+      .slice(0, SURFACE_MAX_CARDS),
     year,
     prevYear: String(Number(year) - 1),
     week
@@ -1091,7 +1114,7 @@ function renderCDC(cdcData) {
   const prevYear = cdcData?.prevYear || String(Number(year) - 1);
   const week = cdcData?.week;
   if (!diseases || diseases.length === 0) {
-    $('cdcSection').innerHTML = '<div class="no-data">No tracked disease data found for the current MMWR year.</div>';
+    $('cdcSection').innerHTML = '<div class="no-data">No notifiable conditions are running above their prior-year baseline for the latest MMWR week.</div>';
     return;
   }
 
@@ -1099,8 +1122,8 @@ function renderCDC(cdcData) {
   diseases.forEach(d => {
     totalYtd += d.ytdCurrent;
     const p = pct(d.ytdCurrent, d.ytdPrevious);
-    if (trendClass(p) === 'up') trendingUp++;
-    // Roll up Minnesota's year-to-date cases across all tracked diseases.
+    if (isEmergent(d) || trendClass(p) === 'up') trendingUp++;
+    // Roll up Minnesota's year-to-date cases across all currently flagged diseases.
     const mnState = Object.entries(d.states).find(([k]) => isMinnesota(k));
     if (mnState && mnState[1].ytd > 0) {
       mnYtd += mnState[1].ytd;
@@ -1113,17 +1136,22 @@ function renderCDC(cdcData) {
   $('sumCdcUpdated').textContent = week ? `CDC week ${week}, ${year}` : ('as of ' + now());
   $('sumMnCases').textContent = fmt(mnYtd);
   $('sumMnUpdated').textContent = mnDiseaseCount
-    ? `across ${mnDiseaseCount} tracked disease${mnDiseaseCount !== 1 ? 's' : ''}`
-    : 'no tracked cases';
+    ? `across ${mnDiseaseCount} flagged disease${mnDiseaseCount !== 1 ? 's' : ''}`
+    : 'no flagged cases';
 
   const grid = document.createElement('div');
   grid.className = 'cards-grid';
 
   diseases.forEach((d, idx) => {
+    const emergent = isEmergent(d);
     const p = pct(d.ytdCurrent, d.ytdPrevious);
-    const trend = trendClass(p);
-    const pctStr = p === null ? 'N/A' : (p >= 0 ? '+' : '') + p.toFixed(0) + '%';
-    const pctClass = p === null ? 'pct-stable' : (p > 10 ? 'pct-up' : p < -10 ? 'pct-down' : 'pct-stable');
+    // A newly emergent condition has no prior-year baseline, so the year-over-year
+    // percentage is undefined; label it "NEW" and treat it as trending up rather
+    // than showing a misleading "N/A · Stable".
+    const trend = emergent ? 'up' : trendClass(p);
+    const trendText = emergent ? '🆕 New this year' : trendLabel(trend);
+    const pctStr = emergent ? 'NEW' : (p === null ? 'N/A' : (p >= 0 ? '+' : '') + p.toFixed(0) + '%');
+    const pctClass = emergent ? 'pct-up' : (p === null ? 'pct-stable' : (p > 10 ? 'pct-up' : p < -10 ? 'pct-down' : 'pct-stable'));
 
     // Build the state breakdown. Minnesota is always pinned to the top and
     // highlighted so it is visible for every disease, even when it falls outside
@@ -1150,7 +1178,7 @@ function renderCDC(cdcData) {
     card.innerHTML = `
       <div class="disease-card-header">
         <span class="disease-name">${d.display}</span>
-        <span class="trend-badge trend-${trend}">${trendLabel(trend)}</span>
+        <span class="trend-badge trend-${trend}">${trendText}</span>
       </div>
       <div class="disease-stats">
         <div class="stat-cell">
