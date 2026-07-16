@@ -236,6 +236,7 @@ main { padding: 24px 0 48px; }
 .trend-up { background: #F5ECEC; color: var(--trend-up); }
 .trend-down { background: #EAF0EA; color: var(--trend-down); }
 .trend-stable { background: #F0EDE8; color: var(--trend-stable); }
+.hc-badge { background: var(--risk-high); color: #FAF7F0; letter-spacing: 0.02em; }
 
 .disease-stats {
   display: grid;
@@ -680,7 +681,7 @@ footer a { color: var(--text-secondary); }
     <div class="section">
       <div class="section-header">
         <span class="section-title">🇺🇸 US Outbreak Surveillance</span>
-        <span class="section-desc">CDC NNDSS · conditions running above last year, auto-flagged · click a card to expand state breakdown</span>
+        <span class="section-desc">CDC NNDSS · conditions running above last year, plus high-consequence pathogens on any case · auto-flagged · click a card to expand state breakdown</span>
       </div>
       <div class="cdc-note" id="cdcNote"></div>
       <div id="cdcSection">
@@ -719,7 +720,7 @@ footer a { color: var(--text-secondary); }
     <a href="https://github.com/INRB-UMIE/Ebola_DRC_2026" target="_blank">INRB-UMIE Ebola DRC 2026</a> ·
     <a href="https://www.who.int/emergencies/disease-outbreak-news" target="_blank">WHO DON</a> ·
     For situational awareness only — not a clinical resource.
-    <div class="build-timestamp">Dashboard page last modified: 2026-07-15 08:51 AM CDT</div>
+    <div class="build-timestamp">Dashboard page last modified: 2026-07-15 07:07 PM CDT</div>
   </div>
 </footer>
 
@@ -814,6 +815,37 @@ const SURFACE_SUSTAINED_RATIO = 1.10; // path 2: >=10% above last year ...
 const SURFACE_MIN_EXCESS = 50;      // ... if it also carries >=50 excess cases
 const SURFACE_MAX_CARDS = 24;       // show at most this many, strongest first
 
+// ── High-consequence severity tier (any case is a signal) ──
+// Epidemic-prone, high-lethality, bioterror Category A, and elimination-target
+// conditions where even a SINGLE confirmed case warrants attention regardless of
+// year-over-year trend. The trend-based signal above is magnitude- and
+// change-driven, so it structurally suppresses exactly these: a 2-case anthrax or
+// novel-influenza cluster sits under the noise floor, and even above it ranks last
+// by excess cases and falls off the card cap. That is the most dangerous failure
+// mode for an early-warning monitor — missing a small but severe signal — so these
+// conditions get a dedicated any-case floor and are pinned to the top of the panel.
+//
+// IMPORTANT: this is NOT a return of the old DISEASE_KEYWORDS allowlist. That
+// allowlist was the ONLY path to surface, so any condition not on it (a genuinely
+// new outbreak) was permanently invisible — the exact bug that motivated the
+// signal-based rewrite. This tier is purely ADDITIVE: it can only RAISE a
+// dangerous condition's visibility, never suppress anything. Every condition is
+// still scored by the data-driven signal independently, so new and unlisted
+// outbreaks continue to surface automatically. Adding or removing a name here only
+// changes whether that one pathogen also receives the any-case floor; it never
+// gates what else can appear. Match is a case-insensitive substring test against
+// the cleaned label, so NNDSS sub-labels (e.g. "Measles, Indigenous",
+// "Botulism, foodborne", "Poliomyelitis, paralytic") are all covered.
+const HIGH_CONSEQUENCE_PATTERNS = [
+  'measles', 'rubella', 'poliomyelitis', 'polio', 'diphtheria', 'plague',
+  'anthrax', 'botulism', 'smallpox', 'cholera', 'yellow fever', 'tularemia',
+  'viral hemorrhagic fever', 'hemorrhagic fever', 'ebola', 'marburg', 'lassa',
+  'crimean-congo', 'novel influenza', 'variant influenza',
+  'severe acute respiratory syndrome', 'middle east respiratory syndrome',
+  'novel coronavirus', 'sars-cov', 'mers-cov'
+];
+const HIGH_CONSEQUENCE_MIN_YTD = 1; // any confirmed case surfaces the condition
+
 // ════════════════════════════════════════════════════════
 //  UTILITIES
 // ════════════════════════════════════════════════════════
@@ -858,8 +890,19 @@ function outbreakExcess(d) {
   return d.ytdCurrent - Math.max(0, d.ytdPrevious);
 }
 
+// True when a condition is a high-consequence pathogen (see HIGH_CONSEQUENCE_
+// PATTERNS). Matched on the cleaned display label, case-insensitively.
+function isHighConsequence(d) {
+  const name = String(d.display || '').toLowerCase();
+  return HIGH_CONSEQUENCE_PATTERNS.some(p => name.includes(p));
+}
+
 // Decide whether a condition is showing enough of an outbreak signal to surface.
 function isSurfaced(d) {
+  // Severity tier: a high-consequence pathogen surfaces on any confirmed case,
+  // bypassing the noise floor and the trend gates entirely. This is additive —
+  // it only ever adds a dangerous condition, never removes one.
+  if (isHighConsequence(d)) return d.ytdCurrent >= HIGH_CONSEQUENCE_MIN_YTD;
   if (d.ytdCurrent < SURFACE_MIN_YTD) return false;   // below the noise floor
   if (isEmergent(d)) return true;                     // new / re-emergent this year
   const ratio = d.ytdCurrent / d.ytdPrevious;
@@ -1143,12 +1186,23 @@ function processCDC(cdcPayload) {
   const all = Object.values(diseaseMap);
   const surfaced = all
     .filter(isSurfaced)
-    .sort((a, b) => outbreakExcess(b) - outbreakExcess(a));
+    .sort((a, b) => {
+      // High-consequence pathogens pin to the top so a small but severe cluster
+      // is never ranked off the card cap by a big endemic climber; within each
+      // group, high-consequence by raw case count, the rest by excess-over-baseline.
+      const ha = isHighConsequence(a), hb = isHighConsequence(b);
+      if (ha !== hb) return ha ? -1 : 1;
+      if (ha && hb) return b.ytdCurrent - a.ytdCurrent;
+      return outbreakExcess(b) - outbreakExcess(a);
+    });
+  const highConsequenceCount = surfaced.filter(isHighConsequence).length;
 
   return {
-    // Surface only conditions running above their prior-year baseline, ranked by
-    // how many excess cases they are carrying, capped so the panel stays focused.
+    // Surface conditions running above their prior-year baseline plus any
+    // high-consequence pathogen with a confirmed case, ranked with the severity
+    // tier pinned first, capped so the panel stays focused.
     diseases: surfaced.slice(0, SURFACE_MAX_CARDS),
+    highConsequenceCount,
     // Selection counts, so the panel can show the inclusion logic at work. This
     // matters because data.cdc.gov is not reachable from the build environment
     // (egress policy), so the thresholds cannot be tuned against the live feed
@@ -1174,20 +1228,24 @@ function renderCDC(cdcData) {
   // legible in the browser (the only place the live CDC feed is reachable).
   const evaluated = cdcData?.evaluated ?? 0;
   const surfacedCount = cdcData?.surfacedCount ?? diseases.length;
+  const highConsequenceCount = cdcData?.highConsequenceCount ?? 0;
   const noteEl = $('cdcNote');
   if (noteEl) {
     if (evaluated > 0) {
       const shownNote = surfacedCount > diseases.length ? ` · showing top ${diseases.length}` : '';
+      const hcNote = highConsequenceCount > 0
+        ? ` · ${fmt(highConsequenceCount)} high-consequence flagged`
+        : '';
       noteEl.textContent =
         `Evaluated ${fmt(evaluated)} notifiable condition${evaluated !== 1 ? 's' : ''} · ` +
-        `${fmt(surfacedCount)} running above prior-year baseline${shownNote}`;
+        `${fmt(surfacedCount)} running above prior-year baseline${hcNote}${shownNote}`;
     } else {
       noteEl.textContent = '';
     }
   }
 
   if (!diseases || diseases.length === 0) {
-    $('cdcSection').innerHTML = '<div class="no-data">No notifiable conditions are running above their prior-year baseline for the latest MMWR week.</div>';
+    $('cdcSection').innerHTML = '<div class="no-data">No notifiable conditions met the outbreak-surfacing criteria (above prior-year baseline, or a high-consequence pathogen with a confirmed case) for the latest MMWR week.</div>';
     return;
   }
 
@@ -1217,6 +1275,7 @@ function renderCDC(cdcData) {
 
   diseases.forEach((d, idx) => {
     const emergent = isEmergent(d);
+    const highCon = isHighConsequence(d);
     const p = pct(d.ytdCurrent, d.ytdPrevious);
     // A newly emergent condition has no prior-year baseline, so the year-over-year
     // percentage is undefined; label it "NEW" and treat it as trending up rather
@@ -1225,6 +1284,13 @@ function renderCDC(cdcData) {
     const trendText = emergent ? '🆕 New this year' : trendLabel(trend);
     const pctStr = emergent ? 'NEW' : (p === null ? 'N/A' : (p >= 0 ? '+' : '') + p.toFixed(0) + '%');
     const pctClass = emergent ? 'pct-up' : (p === null ? 'pct-stable' : (p > 10 ? 'pct-up' : p < -10 ? 'pct-down' : 'pct-stable'));
+
+    // High-consequence pathogens carry a distinct badge naming the surfacing
+    // reason (severity, not trend); the YoY chip in the footer still shows the
+    // actual trend. Everything else keeps the trend badge.
+    const headerBadge = highCon
+      ? '<span class="trend-badge hc-badge">⚠ High-consequence</span>'
+      : `<span class="trend-badge trend-${trend}">${trendText}</span>`;
 
     // Build the state breakdown. Minnesota is always pinned to the top and
     // highlighted so it is visible for every disease, even when it falls outside
@@ -1251,7 +1317,7 @@ function renderCDC(cdcData) {
     card.innerHTML = `
       <div class="disease-card-header">
         <span class="disease-name">${d.display}</span>
-        <span class="trend-badge trend-${trend}">${trendText}</span>
+        ${headerBadge}
       </div>
       <div class="disease-stats">
         <div class="stat-cell">
