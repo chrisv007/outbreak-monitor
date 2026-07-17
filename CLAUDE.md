@@ -173,36 +173,82 @@ breakdown. The outbreak it tracks is defined entirely by the `FEATURED_OUTBREAKS
 config object in `index.html`. When the tracked outbreak winds down, swap the config
 for a new feed (see the data-freshness rule below for the signal to do so).
 
-**Currently tracking:** Ebola, Bundibugyo virus (BDBV), DRC & Uganda 2026. WHO declared
-a PHEIC on 2026-05-17; it is the largest BDBV outbreak on record.
+**Currently tracking:** Ebola, Bundibugyo virus (BDBV), DRC, Uganda & international imports
+2026. WHO declared a PHEIC on 2026-05-17; it is the largest BDBV outbreak on record.
 
-**Data source:** `INRB-UMIE/Ebola_DRC_2026` (INSP daily SitRep pipeline), raw CSVs under
-`data/insp_sitrep/processed/`. Confirmed live field names:
+**Data source:** Global.health `globaldothealth/outbreak-data`, the **Ebola BVD 2026 line
+list (PUBLIC VIEW)** — one CORS-open CSV covering *every* affected country, so Uganda and
+international imports appear alongside DRC. **CC BY 4.0** — Global.health is a data
+*aggregator*, not itself a health authority, so the section carries an explicit attribution
+and license note. Raw URL (URL-encoded spaces):
+`https://raw.githubusercontent.com/globaldothealth/outbreak-data/main/Ebola%20BVD/Data/Ebola%20BVD%202026%20linelist%20-%20PUBLIC%20VIEW.csv`
 
-| File | Fields |
+**Why this replaced INRB-UMIE:** the former source (`INRB-UMIE/Ebola_DRC_2026`, INSP daily
+SitRep) is **DRC-only by construction** — country-level cumulative CSVs for the DRC national
+total and DRC health zones. Uganda and imports could *never* appear no matter how fresh the
+feed. The whole INRB config and its cumulative-series aggregation logic were removed.
+
+**Shape — this is a LINE LIST, not a cumulative series.** One record per case. Totals are
+built by **counting and grouping records**, not by reading a cumulative value column. Key
+columns (`parseCSV` matches header names *after trimming*, since the live file ships some with
+trailing spaces and a lowercase `Health zone`):
+
+| Column | Use |
 |---|---|
-| `insp_sitrep__cumulative_confirmed_cases__daily.csv` | `nom`, `date`, `cumulative_confirmed_cases` |
-| `insp_sitrep__cumulative_confirmed_deaths__daily.csv` | `nom`, `date`, `cumulative_confirmed_deaths` |
-| `insp_sitrep__national_cumulative_confirmed_cases__daily.csv` | `nom` (=`DRC`), `date`, `national_cumulative_confirmed_cases` |
-| `insp_sitrep__national_cumulative_confirmed_deaths__daily.csv` | `nom` (=`DRC`), `date`, `national_cumulative_confirmed_deaths` |
+| `Case_status` | `confirmed` / `suspected` / `probable` / `discarded` / `contact` |
+| `Location_Admin0` | **case location** = country attribution key |
+| `Location Admin1` | province (note: space, not underscore) |
+| `Health zone` | sub-country drill-down granularity (mostly DRC) |
+| `Outcome` | `Death` marks a confirmed death (else empty / `Recovered`) |
+| `Nationality`, `Travel_history*` | **NOT used for attribution** (see traps) |
+| `Date_confirmation` | drives the "recently confirmed (last 14 days)" signal |
+| `Date_last_modified` | drives the live/stale indicator |
 
-**Quirks:**
-- Per-zone files use **different value-column names** than the national files
-  (`cumulative_*` vs `national_cumulative_*`). Mixing them up returns zeros.
-- The data is a cumulative daily series: take each zone's row at the **latest date**, do
-  not sum across dates.
-- Zone-name spelling variants exist within the same feed (for example `Mongbwalu` vs
-  `Mongbalu`). Fold them with `data/aliases.csv` (`observed_name` -> `canonical_nom`)
-  before aggregating, or the per-zone table double-lists the same zone.
-- An `NA` zone row holds cases not yet assigned to a health zone. Keep it, labelled
-  "Unassigned"; drop the `DRC` aggregate row from the per-zone table.
-- Deaths cells may be `ND` (no data); treat as 0.
+**Aggregation rules (in `fetchOutbreak`):**
+- **Confirmed only in headline totals.** Filter to `Case_status == 'confirmed'`. The file also
+  carries suspected, probable, discarded and contact records; `suspected` alone is ~900 of
+  ~3,200 rows, so folding it into the total would badly distort it. Totals count confirmed
+  records; deaths count confirmed records with `Outcome == 'Death'`.
+- **Country totals are grouped DYNAMICALLY from the data**, keyed on `Location_Admin0`. There
+  is no hardcoded country list, so a new country (e.g. the single confirmed France import)
+  surfaces on its own with no code change. Sorted by case count.
+- **Health-zone drill-down is preserved**, now derived from the line list: pick the largest
+  affected country that actually carries zone detail (DRC in practice) and break its confirmed
+  cases down by `Health zone` (empty -> `Unassigned`), rendered as a collapsible `<details>`
+  under the country table.
+- **Recently-confirmed** count over the last `recentWindowDays` (14) from `Date_confirmation`,
+  shown as a live activity line.
 
-**Non-negotiable data-freshness indicator:** the section must always show whether the feed
-is still live. `dataFreshness()` compares the feed's most recent date against the viewer's
-current date and the config's `freshnessWindowDays` (currently 14). Inside the window the
-section shows a green LIVE banner; past it the banner flips to a red STALE / replace-this-
-section warning. This is how the user knows when to have the featured outbreak swapped out.
+**Two verified traps (design around them, do not regress):**
+1. **Attribution must follow case location, never nationality or travel history.** Some
+   confirmed *DRC* cases carry foreign nationality/travel history — e.g. ID 542, an *American*
+   national with travel history to *Germany*, is correctly a **DRC** case (`Location_Admin0 =
+   Democratic Republic of the Congo`, `Health zone = Nyankunde`). Grouping strictly on
+   `Location_Admin0` handles this. Do not group on `Nationality` or `Travel_history_location`.
+2. **The file is not clean RFC 4180.** It has CRLF endings, quoted fields with embedded commas,
+   a **blank trailing unnamed column** (holds a stray source URL for exactly one row), and at
+   least one **malformed date** (`20260715`, no dashes, in `Date_last_modified`). `parseCSV` is
+   a full character state machine (handles quotes, `""` escapes, embedded newlines, CRLF) rather
+   than a naive line/`,` split. Dates are normalized through `normISODate()` before any
+   comparison: left raw, `20260715` would **beat** a real `2026-07-16` in a lexical max (because
+   `'0' > '-'`) and then parse to `Invalid Date`, silently breaking the freshness banner.
+   `normISODate` normalizes ISO, compact `YYYYMMDD`, and `M/D/YYYY`, rejecting out-of-range
+   month/day, so the max stays honest.
+
+**Non-negotiable data-freshness indicator:** the section must always show whether the feed is
+still live. `dataFreshness()` compares the feed's own most-recent `Date_last_modified` (across
+all records — any edit signals activity) against the viewer's current date and the config's
+`freshnessWindowDays` (currently 14). Inside the window the section shows a green LIVE banner;
+past it the banner flips to a red STALE / replace-this-section warning. This is how the user
+knows when to have the featured outbreak swapped out. It is driven off the file's own dates, not
+an assumption that the feed updates forever.
+
+**Verification note:** unlike CDC (egress-blocked here), the Global.health raw CSV **is**
+reachable from the session environment (CORS-open, confirmed HTTP 200). Every change to this
+section was validated against the live file: a Node aggregation simulation (2,094 confirmed;
+DRC 2,073 / Uganda 20 / France 1; 798 deaths; 46 DRC zones; latest 2026-07-16 with the
+malformed value correctly *not* poisoning the max; 572 confirmed in 14d) plus a headless
+Chromium render of `index.html` (country table + zone drill-down + LIVE banner, no JS errors).
 
 ---
 
@@ -266,3 +312,4 @@ If the response is an empty array `[]`, the query is wrong. Do not commit until 
 | **High-consequence severity tier (additive early-warning floor)** | Prompted by a full external evaluation of the US Outbreak Surveillance panel. The evaluation's key correct insight: the panel is a *change-detector, not an outbreak-detector*, and its most dangerous failure is structural, not a mis-set threshold — a small high-consequence signal (novel influenza A, a viral hemorrhagic fever, plague, anthrax, low-count measles) is killed by `SURFACE_MIN_YTD = 5` and/or ranked off the 24-card cap because it carries few "excess" cases. Loosening the ratio/excess knobs cannot fix this; it only pulls in endemic noise. Fix: added `isHighConsequence()` + `HIGH_CONSEQUENCE_PATTERNS` (epidemic-prone / high-lethality / bioterror Category A / elimination-target pathogens) and an any-case floor `HIGH_CONSEQUENCE_MIN_YTD = 1`. In `isSurfaced()` a high-consequence condition surfaces on any confirmed case, bypassing the noise floor and both ratio gates; in `processCDC()` the sort pins high-consequence conditions to the top (by raw count) so they can't be capped out; the card shows a distinct red `⚠ High-consequence` badge while the YoY chip still reports the real (possibly flat/declining) trend; `processCDC()` returns `highConsequenceCount`, added to the `.cdc-note` diagnostic. **This is explicitly additive, not the banned `DISEASE_KEYWORDS` allowlist** — the allowlist was the *only* surfacing path (new outbreaks invisible); this tier can only *add* a dangerous pathogen, never suppress, and the data-driven signal still scores every condition independently. Deliberately did NOT act on the evaluation's other suggestions: a secondary "largest ongoing by volume" readout was declined (it would resurface the endemic giants — chlamydia/gonorrhea — the panel exists to exclude), pertussis staying out is *correct* (down ~69% YoY, genuinely not "running above last year"), and the foodborne/PulseNet blind spot is a data-source limit (aggregate NNDSS can't see WGS clusters), out of scope. Purely client-side selection; no API/query change. `data.cdc.gov` remains egress-blocked here (403 CONNECT), so verified with a 19-case Node simulation (low-count novel flu/anthrax/VHF/polio now surface; declining plague/diphtheria/botulism still surface via severity; anthrax at 0 cases does not; cyclosporiasis/measles/Hib still surface via trend; chlamydia, gonorrhea +8%, pertussis −69%, small blips, below-floor all still excluded; severity tier pins above trend cards) plus a JS syntax check. |
 | **Severity-tier refinement: narrow the scope + whole-word matching + activity gate** | Follow-up after the high-consequence tier shipped and was seen on the live panel. The screenshot exposed two concrete failures. (1) *False match:* `HIGH_CONSEQUENCE_PATTERNS` matched with a bare substring test, so `cholera` matched the bacterium name `Vibrio cholerae` inside the common **Vibriosis** label — flagging Vibriosis (Probable 988, Confirmed 488, both *declining*) as high-consequence. Fixed with `HIGH_CONSEQUENCE_REGEXES` (each pattern wrapped in `\b...\b`); real `Cholera` still matches, `cholerae` no longer does, and comma/space-delimited NNDSS sub-labels still match. (2) *Endemic flooding:* the tier surfaced every listed pathogen on any case regardless of trend, pinned to the top by raw count. In practice that filled the top of the panel with declining endemic background — botulism (Infant, Foodborne, wound), tularemia, an already-covered declining Measles-Imported, a 1-case declining Cholera — all wearing a red alarm badge and burying the genuine risers (Cyclosporiasis +152%, Chikungunya +260%, Mpox). Two fixes: **scope** — removed conditions with real endemic US baselines (`botulism`, `tularemia`; also dropped bare `polio` in favor of `poliomyelitis`/`poliovirus`), leaving only pathogens that are abnormal to see at all (a genuine cluster of the endemic ones still surfaces via the trend signal); **activity gate** — a high-consequence condition now surfaces only when emergent, active this week (`currentWeek > 0`), or not declining (`ytdCurrent >= ytdPrevious`), and the sort pins only *urgent* high-consequence (`isUrgentHighConsequence` — emergent/active/rising) to the top, letting a present-but-flat rare case (e.g. a single endemic plague case) still show but rank by excess so it never outranks a major climber. Net effect on the screenshot data: 15 cards → 7, led by Measles Indigenous (+61%), then the real risers by magnitude, with Plague flagged at the bottom; Vibriosis/botulism/tularemia/declining-cholera all gone. The tier's core value is preserved — a Node simulation confirms emergent/rising novel-influenza A, anthrax, VHF, polio, and diphtheria clusters still surface and pin urgent. Purely client-side selection; no API/query change. `data.cdc.gov` remains egress-blocked here (403 CONNECT), so verified with a Node simulation over the exact live screenshot rows plus edge cases, and a JS syntax check. |
 | **Surfacing fix: PR #11 sustained-rise path was a near no-op** | Follow-up to PR #11, reported as "the change doesn't appear to have worked." PR #11 added path 2 (sustained rise) to `isSurfaced()` to catch high-burden conditions climbing under the 1.2 surge bar, but set its floor at `SURFACE_SUSTAINED_RATIO = 1.15` — only a sliver below 1.2. Path 1 already admits everything `>= 1.2`, so path 2's *effective* reach was just the razor-thin `[1.15, 1.20)` ratio window; that band is rarely populated in the live feed, so the surfaced-condition count barely moved and any high-burden condition rising 10-15% was still dropped. It behaved exactly as coded, but the code didn't do what the goal needed. Fix: lowered `SURFACE_SUSTAINED_RATIO` to `1.10`, giving the absolute-burden path a real 10-point band `[1.10, 1.20)` to act in while the floor still rejects flat endemic giants (chlamydia +1% → ratio ≈ 1.01, excluded; gonorrhea +8% → 1.08, excluded). Also added a surfacing diagnostic so this class of "it didn't visibly change anything" is debuggable *in the browser* (the only place the live CDC feed is reachable — the session env is egress-blocked, 403, so no prior session could ever validate thresholds against real data, the root reason repeated blind threshold nudges "didn't work"): `processCDC()` now returns `evaluated` + `surfacedCount`, rendered as the `.cdc-note` line under the US section header. Verified with an expanded Node simulation (the previously-dropped +12%/67-excess case now surfaces; chlamydia, gonorrhea +8%, small-base blips, declining, and below-floor all still excluded; 11/11 as expected) plus a JS syntax check. `data.cdc.gov` remains egress-blocked here (403 CONNECT), so no live curl was possible; the new diagnostic line is what confirms the effect on the live site. |
+| **Featured-outbreak source migration: INRB-UMIE → Global.health line list** | The Ebola featured slot pointed entirely at `INRB-UMIE/Ebola_DRC_2026` (INSP SitRep), which is **DRC-only by construction** — DRC national totals and DRC health-zone cumulative CSVs. Uganda and international imports could never appear regardless of feed freshness. Replaced it with the Global.health **Ebola BVD 2026 line list (PUBLIC VIEW)**, one CORS-open CSV covering all affected countries. Dropped INRB entirely: config (four cumulative URLs + `aliasUrl` + value-field names) and the cumulative-series/`aliases.csv` aggregation logic both removed. New shape is a **record-per-case line list**, so `fetchOutbreak` now counts and groups records instead of reading cumulative columns: **confirmed cases only** in headline totals (suspected/probable/discarded excluded — suspected alone is ~900/3,200 rows and would distort the total); **country totals grouped dynamically** from `Location_Admin0` (no hardcoded country list, so the lone France import surfaces on its own); **health-zone drill-down preserved** as a collapsible breakdown of the largest zone-bearing country (DRC); plus a "recently confirmed (14d)" activity line from `Date_confirmation`. Designed around two verified traps: (1) **attribution follows case location, not nationality/travel history** — ID 542 (American national, travel history to Germany) is correctly a DRC case, handled by grouping strictly on `Location_Admin0`; (2) **not clean RFC 4180** — CRLF, quoted embedded commas, a blank trailing unnamed column, and a malformed `Date_last_modified` (`20260715`) that, left raw, would beat `2026-07-16` in a lexical max (`'0' > '-'`) then parse to Invalid Date and break the freshness banner. `parseCSV` rewritten as a full character state machine; new `normISODate()` normalizes/validates dates before any max. Freshness now driven off the file's own most-recent `Date_last_modified`, not an assumption of perpetual updates. Updated the summary tile ("all countries"), footer attribution (Global.health, CC BY 4.0), and this doc; noted CC BY 4.0 with attribution since Global.health is an aggregator, not a health authority. **Unlike CDC, the Global.health raw CSV IS reachable here** — verified against the live file with a Node aggregation simulation (2,094 confirmed; DRC 2,073 / Uganda 20 / France 1; 798 deaths, CFR 38.1%; 46 DRC zones; latest 2026-07-16, malformed value correctly not poisoning the max; 572 confirmed in 14d) and a headless Chromium render of `index.html` (country table + zone drill-down + LIVE banner, zero JS errors) plus a JS syntax check. |
