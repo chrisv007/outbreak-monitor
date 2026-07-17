@@ -456,6 +456,21 @@ main { padding: 24px 0 48px; }
 .bar-bg { background: var(--card-border); border-radius: 3px; height: 6px; }
 .bar-fill { background: var(--trend-up); border-radius: 3px; height: 6px; }
 
+/* ── Health-zone drill-down (collapsible under the country table) ── */
+.zone-drill { margin-top: 14px; border-top: 1px solid var(--card-border); padding-top: 10px; }
+.zone-drill > summary {
+  cursor: pointer;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  font-weight: 600;
+  padding: 4px 0;
+  list-style: revert;
+}
+.zone-drill > summary:hover { color: var(--accent); }
+.zone-drill .country-table { margin-top: 8px; }
+
 /* ── WHO Alert Cards ── */
 .who-grid {
   display: grid;
@@ -661,7 +676,7 @@ footer a { color: var(--text-secondary); }
       </div>
       <div class="summary-item">
         <div class="num" id="sumOutbreakCases">—</div>
-        <div class="label">Ebola BDBV confirmed (DRC)</div>
+        <div class="label">Ebola BDBV confirmed (all countries)</div>
         <div class="updated" id="sumOutbreakUpdated"></div>
       </div>
       <div class="summary-item">
@@ -717,10 +732,10 @@ footer a { color: var(--text-secondary); }
 <footer>
   <div class="container">
     Data sources: <a href="https://data.cdc.gov/NNDSS/NNDSS-Weekly-Data/x9gk-5huc" target="_blank">CDC NNDSS</a> ·
-    <a href="https://github.com/INRB-UMIE/Ebola_DRC_2026" target="_blank">INRB-UMIE Ebola DRC 2026</a> ·
+    <a href="https://github.com/globaldothealth/outbreak-data/tree/main/Ebola%20BVD" target="_blank">Global.health Ebola BVD 2026 line list</a> (CC BY 4.0) ·
     <a href="https://www.who.int/emergencies/disease-outbreak-news" target="_blank">WHO DON</a> ·
     For situational awareness only — not a clinical resource.
-    <div class="build-timestamp">Dashboard page last modified: 2026-07-15 07:36 PM CDT</div>
+    <div class="build-timestamp">Dashboard page last modified: 2026-07-17 01:17 AM CDT</div>
   </div>
 </footer>
 
@@ -737,32 +752,49 @@ footer a { color: var(--text-secondary); }
 const FEATURED_OUTBREAKS = [
   {
     id: 'ebola-bdbv-2026',
-    name: 'Ebola — Bundibugyo virus 2026 (DRC & Uganda)',
+    name: 'Ebola — Bundibugyo virus 2026 (DRC, Uganda & imports)',
     pathogenDesc: 'Bundibugyo ebolavirus (BDBV); WHO PHEIC declared 17 May 2026 — largest BDBV outbreak on record',
-    // INRB-UMIE / INSP daily SitRep pipeline. Cumulative confirmed, by health zone.
-    casesUrl: 'https://raw.githubusercontent.com/INRB-UMIE/Ebola_DRC_2026/main/data/insp_sitrep/processed/insp_sitrep__cumulative_confirmed_cases__daily.csv',
-    deathsUrl: 'https://raw.githubusercontent.com/INRB-UMIE/Ebola_DRC_2026/main/data/insp_sitrep/processed/insp_sitrep__cumulative_confirmed_deaths__daily.csv',
-    nationalCasesUrl: 'https://raw.githubusercontent.com/INRB-UMIE/Ebola_DRC_2026/main/data/insp_sitrep/processed/insp_sitrep__national_cumulative_confirmed_cases__daily.csv',
-    nationalDeathsUrl: 'https://raw.githubusercontent.com/INRB-UMIE/Ebola_DRC_2026/main/data/insp_sitrep/processed/insp_sitrep__national_cumulative_confirmed_deaths__daily.csv',
-    // Maps spelling variants (observed_name) to a canonical zone (canonical_nom) so
-    // the per-zone table does not double-list the same health zone.
-    aliasUrl: 'https://raw.githubusercontent.com/INRB-UMIE/Ebola_DRC_2026/main/data/aliases.csv',
-    zoneField: 'nom',
-    dateField: 'date',
-    casesValueField: 'cumulative_confirmed_cases',
-    deathsValueField: 'cumulative_confirmed_deaths',
-    nationalCasesValueField: 'national_cumulative_confirmed_cases',
-    nationalDeathsValueField: 'national_cumulative_confirmed_deaths',
+    // Global.health case line list — one record per case, every affected country in
+    // a single CORS-open file, so Uganda and international imports surface alongside
+    // DRC instead of being invisible to a DRC-only national feed. Replaces the former
+    // INRB-UMIE / INSP SitRep pipeline (DRC-only by construction). This is a LINE
+    // LIST (record-per-case), not a country-level cumulative series, so totals are
+    // built by counting/grouping records, not by reading a cumulative value column.
+    // Global.health is a data aggregator, not itself a health authority: attribute it
+    // and honor its CC BY 4.0 license (see `license`/`attribution` below).
+    linelistUrl: 'https://raw.githubusercontent.com/globaldothealth/outbreak-data/main/Ebola%20BVD/Data/Ebola%20BVD%202026%20linelist%20-%20PUBLIC%20VIEW.csv',
+    // Line-list column names. Headers are matched after trimming surrounding spaces
+    // (the live file ships some like "Hospitalised " with trailing space, a lowercase
+    // "Health zone", and one blank trailing column). Do not assume clean RFC 4180.
+    statusField: 'Case_status',
+    confirmedValue: 'confirmed',        // ONLY confirmed cases enter headline totals;
+                                        // suspected/probable/discarded are excluded
+                                        // (suspected alone is a large share and would
+                                        // badly distort the total if folded in).
+    countryField: 'Location_Admin0',    // case LOCATION. Country attribution follows
+                                        // this, NEVER nationality or travel history —
+                                        // e.g. an American case with travel history to
+                                        // Germany is still correctly a DRC case.
+    zoneField: 'Health zone',           // sub-country granularity (mostly DRC)
+    outcomeField: 'Outcome',            // 'Death' marks a confirmed death
+    deathValue: 'death',
+    confirmationDateField: 'Date_confirmation', // drives the "recently confirmed" signal
+    lastModifiedField: 'Date_last_modified',    // drives live/stale (file's own dates)
+    recentWindowDays: 14,
     trackingStarted: '2026-05-14',
     trackingStatus: 'active', // 'active' or 'ended'
     concludedDate: null,
-    // Data-freshness contract: if the feed's most recent date is older than this
-    // many days relative to the viewer's current date, the section flips to a loud
-    // STALE banner telling the user to have this outbreak swapped out.
+    // Data-freshness contract: computed from the newest Date_last_modified in the file
+    // itself (any record edit signals an active feed), not an assumption of perpetual
+    // updates. If that date is older than this many days relative to the viewer's
+    // current date, the section flips to a loud STALE banner telling the user to have
+    // this outbreak swapped out.
     freshnessWindowDays: 14,
-    sourceName: 'INRB-UMIE · INSP SitRep pipeline',
-    sourceUrl: 'https://github.com/INRB-UMIE/Ebola_DRC_2026',
-    lastUpdatedNote: 'INRB-UMIE · INSP daily SitRep · cumulative confirmed'
+    sourceName: 'Global.health · Ebola BVD 2026 line list',
+    sourceUrl: 'https://github.com/globaldothealth/outbreak-data/tree/main/Ebola%20BVD',
+    license: 'CC BY 4.0',
+    attribution: 'Global.health, Ebola BVD 2026 line list (PUBLIC VIEW)',
+    lastUpdatedNote: 'Global.health · case line list · confirmed only'
   }
 ];
 
@@ -874,6 +906,28 @@ const stripHtml = s => {
   return d.textContent || d.innerText || '';
 };
 const trunc = (s, n) => s.length > n ? s.slice(0, n) + '…' : s;
+// Escape data-driven strings (country/zone names from an external feed) before
+// interpolating them into innerHTML.
+const esc = s => String(s == null ? '' : s)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+// Normalize a possibly-messy date cell to a valid ISO YYYY-MM-DD string, or null.
+// The live line list carries at least one malformed value ("20260715", no dashes);
+// left raw it would beat a real "2026-07-16" in a lexical max ('0' > '-') and then
+// parse to an Invalid Date, silently breaking the freshness indicator. Normalizing
+// first (and rejecting out-of-range month/day) keeps the max honest.
+const normISODate = v => {
+  const s = String(v == null ? '' : v).trim();
+  if (!s) return null;
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/)          // ISO, optionally with a time part
+       || s.match(/^(\d{4})(\d{2})(\d{2})$/);          // compact YYYYMMDD (the malformed case)
+  if (!m) { const a = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); // defensive M/D/YYYY
+            if (a) m = [s, a[3], a[1].padStart(2, '0'), a[2].padStart(2, '0')]; }
+  if (!m) return null;
+  const mo = +m[2], da = +m[3];
+  if (mo < 1 || mo > 12 || da < 1 || da > 31) return null;
+  return `${m[1]}-${String(mo).padStart(2, '0')}-${String(da).padStart(2, '0')}`;
+};
 const fmtDate = iso => {
   if (!iso) return '';
   try { return new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }); }
@@ -989,29 +1043,45 @@ function trendLabel(t) {
   return t === 'up' ? '↑ Trending Up' : t === 'down' ? '↓ Trending Down' : '→ Stable';
 }
 
+// Full RFC-4180-ish CSV parser: a single character state machine over the whole
+// text, so it correctly handles quoted fields containing commas, escaped double
+// quotes (""), embedded newlines inside quotes, and CRLF line endings. The live
+// Global.health line list is mostly clean but the task is explicit that we must
+// not assume clean formatting throughout (it has a malformed date and a blank
+// trailing column), so parse defensively rather than splitting on '\n'.
+// Returns an array of row objects keyed by the (trimmed) header names. Header
+// values are trimmed because the feed ships some with trailing spaces
+// ("Hospitalised ", "Isolated ") and a lowercase "Health zone".
 function parseCSV(text) {
-  const lines = text.trim().split('\n');
-  if (lines.length < 2) return [];
-  // handle quoted fields with commas
-  const parseRow = row => {
-    const cols = [];
-    let cur = '', inQ = false;
-    for (let i = 0; i < row.length; i++) {
-      const ch = row[i];
-      if (ch === '"') { inQ = !inQ; }
-      else if (ch === ',' && !inQ) { cols.push(cur.trim()); cur = ''; }
-      else { cur += ch; }
-    }
-    cols.push(cur.trim());
-    return cols;
-  };
-  const headers = parseRow(lines[0]);
-  return lines.slice(1).map(l => {
-    const vals = parseRow(l);
-    const obj = {};
-    headers.forEach((h, i) => { obj[h] = vals[i] || ''; });
-    return obj;
-  });
+  const records = [];
+  let row = [], field = '', inQ = false;
+  const s = String(text || '');
+  const pushField = () => { row.push(field); field = ''; };
+  const pushRow = () => { pushField(); records.push(row); row = []; };
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (inQ) {
+      if (ch === '"') {
+        if (s[i + 1] === '"') { field += '"'; i++; } // escaped quote
+        else inQ = false;
+      } else field += ch;
+    } else if (ch === '"') { inQ = true; }
+    else if (ch === ',') { pushField(); }
+    else if (ch === '\n') { pushRow(); }
+    else if (ch === '\r') { /* swallow; CRLF handled by the \n branch */ }
+    else field += ch;
+  }
+  // Flush any trailing field/row that did not end with a newline.
+  if (field !== '' || row.length) pushRow();
+  if (!records.length) return [];
+  const headers = records[0].map(h => h.trim());
+  return records.slice(1)
+    .filter(r => r.length > 1 || (r.length === 1 && r[0].trim() !== '')) // drop blank lines
+    .map(vals => {
+      const obj = {};
+      headers.forEach((h, i) => { obj[h] = (vals[i] != null ? vals[i] : '').trim(); });
+      return obj;
+    });
 }
 
 // ════════════════════════════════════════════════════════
@@ -1054,91 +1124,89 @@ async function fetchCDC() {
 }
 
 // ════════════════════════════════════════════════════════
-//  FETCH 2: FEATURED OUTBREAK (daily cumulative, by health zone)
+//  FETCH 2: FEATURED OUTBREAK (case line list, all countries)
 // ════════════════════════════════════════════════════════
+// The Global.health feed is a record-per-case line list covering every affected
+// country in one file, so aggregation here counts and groups records rather than
+// reading cumulative value columns. Design rules baked in below:
+//   • Only `confirmed` cases enter headline totals (suspected/probable/discarded
+//     are excluded — suspected alone is a large share and would distort the total).
+//   • Country totals are grouped DYNAMICALLY from the data, so a new country
+//     appears on its own with no code change and no hardcoded country list.
+//   • Country attribution follows case LOCATION (Location_Admin0), never
+//     nationality or travel history.
+//   • Freshness is driven by the file's own most-recent Date_last_modified.
 async function fetchOutbreak(cfg) {
-  const getText = async url => {
-    const r = await fetch(url);
-    if (!r.ok) throw new Error(`Feed ${r.status}`);
-    return r.text();
-  };
+  const r = await fetch(cfg.linelistUrl);
+  if (!r.ok) throw new Error(`Feed ${r.status}`);
+  const rows = parseCSV(await r.text());
 
-  const [casesText, deathsText, natCasesText, natDeathsText, aliasText] = await Promise.all([
-    getText(cfg.casesUrl),
-    getText(cfg.deathsUrl),
-    getText(cfg.nationalCasesUrl),
-    getText(cfg.nationalDeathsUrl),
-    cfg.aliasUrl ? getText(cfg.aliasUrl).catch(() => '') : Promise.resolve('')
-  ]);
+  const val = (row, field) => (row && field ? (row[field] || '') : '').trim();
+  const isConfirmed = row => val(row, cfg.statusField).toLowerCase() === cfg.confirmedValue;
+  const isDeath = row => val(row, cfg.outcomeField).toLowerCase() === cfg.deathValue;
 
-  const caseRows = parseCSV(casesText);
-  const deathRows = parseCSV(deathsText);
-  const natCaseRows = parseCSV(natCasesText);
-  const natDeathRows = parseCSV(natDeathsText);
-
-  // Build observed -> canonical zone-name map to fold spelling variants together.
-  const aliasMap = {};
-  for (const a of parseCSV(aliasText)) {
-    const obs = (a.observed_name || '').trim();
-    const canon = (a.canonical_nom || '').trim();
-    if (obs && canon) aliasMap[obs] = canon;
+  // Feed freshness follows the file's own last-modified column across ALL records
+  // (any edit signals an active feed). Dates are normalized first so a malformed
+  // value cannot poison the max (see normISODate).
+  let latestDate = '';
+  for (const row of rows) {
+    const d = normISODate(row[cfg.lastModifiedField]);
+    if (d && d > latestDate) latestDate = d;
   }
-  const canonical = name => aliasMap[name] || name;
 
-  // For a cumulative daily series, keep each zone's value at its most recent date.
-  // Dates are ISO (YYYY-MM-DD), so lexical comparison equals chronological order.
-  const latestByZone = (rows, valField) => {
-    const m = {};
-    for (const r of rows) {
-      const zone = (r[cfg.zoneField] || '').trim();
-      const date = (r[cfg.dateField] || '').trim();
-      if (!zone || !date) continue;
-      if (!m[zone] || date > m[zone].date) m[zone] = { date, val: num(r[valField]) };
+  const confirmed = rows.filter(isConfirmed);
+
+  // Country totals — grouped dynamically from case location.
+  const countryMap = {};
+  for (const row of confirmed) {
+    const c = val(row, cfg.countryField) || 'Unspecified location';
+    if (!countryMap[c]) countryMap[c] = { name: c, cases: 0, deaths: 0 };
+    countryMap[c].cases++;
+    if (isDeath(row)) countryMap[c].deaths++;
+  }
+  const countries = Object.values(countryMap).sort((a, b) => b.cases - a.cases);
+
+  // Health-zone drill-down: preserved from the old INSP view, but now derived from
+  // the line list. Pick the largest affected country that actually carries zone
+  // detail (DRC in practice) and break its confirmed cases down by health zone.
+  let drilldownCountry = null, zones = [];
+  for (const c of countries) {
+    const rowsForCountry = confirmed.filter(
+      row => (val(row, cfg.countryField) || 'Unspecified location') === c.name);
+    if (!rowsForCountry.some(row => val(row, cfg.zoneField))) continue;
+    const zoneMap = {};
+    for (const row of rowsForCountry) {
+      const z = val(row, cfg.zoneField) || 'Unassigned';
+      if (!zoneMap[z]) zoneMap[z] = { name: z, cases: 0, deaths: 0 };
+      zoneMap[z].cases++;
+      if (isDeath(row)) zoneMap[z].deaths++;
     }
-    return m;
-  };
-
-  const casesMap = latestByZone(caseRows, cfg.casesValueField);
-  const deathsMap = latestByZone(deathRows, cfg.deathsValueField);
-
-  const toSeries = (rows, valField) => rows
-    .map(r => ({ date: (r[cfg.dateField] || '').trim(), val: num(r[valField]) }))
-    .filter(x => x.date)
-    .sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
-
-  const caseSeries = toSeries(natCaseRows, cfg.nationalCasesValueField);
-  const deathSeries = toSeries(natDeathRows, cfg.nationalDeathsValueField);
-  const latestNat = caseSeries[caseSeries.length - 1] || null;
-  const prevNat = caseSeries.length >= 2 ? caseSeries[caseSeries.length - 2] : null;
-  const latestDeath = deathSeries[deathSeries.length - 1] || null;
-
-  // Build the per-zone snapshot: fold spelling variants into their canonical zone
-  // (summing the cumulative values), drop national/aggregate rows and zeros.
-  const zoneNames = new Set([...Object.keys(casesMap), ...Object.keys(deathsMap)]);
-  const merged = {};
-  for (const z of zoneNames) {
-    if (z.toUpperCase() === 'DRC') continue;
-    const cases = casesMap[z]?.val || 0;
-    const deaths = deathsMap[z]?.val || 0;
-    if (cases <= 0 && deaths <= 0) continue;
-    const key = z === 'NA' ? 'Unassigned (zone pending)' : canonical(z);
-    if (!merged[key]) merged[key] = { name: key, cases: 0, deaths: 0 };
-    merged[key].cases += cases;
-    merged[key].deaths += deaths;
+    zones = Object.values(zoneMap).sort((a, b) => b.cases - a.cases);
+    drilldownCountry = c.name;
+    break;
   }
-  const zones = Object.values(merged).sort((a, b) => b.cases - a.cases);
 
-  const latestDate = latestNat ? latestNat.date
-    : Object.values(casesMap).reduce((mx, v) => v.date > mx ? v.date : mx, '');
+  // Recently-confirmed count — a live activity signal from confirmation dates.
+  const cutoff = new Date();
+  cutoff.setHours(0, 0, 0, 0);
+  cutoff.setDate(cutoff.getDate() - cfg.recentWindowDays);
+  let recentConfirmed = 0;
+  for (const row of confirmed) {
+    const d = normISODate(row[cfg.confirmationDateField]);
+    if (d && new Date(d + 'T00:00:00') >= cutoff) recentConfirmed++;
+  }
 
   return {
+    countries,
     zones,
+    drilldownCountry,
     latestDate,
+    totalRecords: rows.length,
     national: {
-      cases: latestNat ? latestNat.val : zones.reduce((s, z) => s + z.cases, 0),
-      deaths: latestDeath ? latestDeath.val : zones.reduce((s, z) => s + z.deaths, 0),
-      prevCases: prevNat ? prevNat.val : null,
-      prevDate: prevNat ? prevNat.date : null
+      cases: confirmed.length,
+      deaths: confirmed.reduce((s, row) => s + (isDeath(row) ? 1 : 0), 0),
+      recentConfirmed,
+      recentWindowDays: cfg.recentWindowDays
     }
   };
 }
@@ -1449,9 +1517,9 @@ function renderGlobal(results) {
 
 function renderOutbreakData(cfg, data, idx) {
   const target = $(`outbreakBody-${idx}`);
-  const zones = data?.zones || [];
-  if (!zones.length) {
-    target.innerHTML = '<div class="no-data">No case data found in feed.</div>';
+  const countries = data?.countries || [];
+  if (!countries.length) {
+    target.innerHTML = '<div class="no-data">No confirmed case data found in feed.</div>';
     return;
   }
 
@@ -1472,44 +1540,69 @@ function renderOutbreakData(cfg, data, idx) {
   const banner = fresh.live
     ? `<div class="freshness-banner freshness-live">
          <span class="freshness-dot live"></span>
-         <span><strong>LIVE — DATA IS CURRENT.</strong> Most recent INSP SitRep data point: <strong>${fmtDate(data.latestDate)}</strong> (${ageStr}).
+         <span><strong>LIVE — DATA IS CURRENT.</strong> Line list last modified <strong>${fmtDate(data.latestDate)}</strong> (${ageStr}).
          This section auto-flips to a STALE warning if the feed goes <strong>${cfg.freshnessWindowDays}+ days</strong> without a new update, which is your signal to have this outbreak replaced.</span>
        </div>`
     : `<div class="freshness-banner freshness-stale">
          <span class="freshness-dot stale"></span>
-         <span><strong>STALE — TIME TO REPLACE THIS SECTION.</strong> No new data for <strong>${fresh.days} days</strong> (latest point ${fmtDate(data.latestDate)}; freshness window is ${cfg.freshnessWindowDays} days).
-         The ${cfg.name} feed appears to have stopped updating. Ask Claude to re-evaluate the global outbreak landscape and swap in the current priority outbreak.</span>
+         <span><strong>STALE — TIME TO REPLACE THIS SECTION.</strong> No update for <strong>${fresh.days} days</strong> (line list last modified ${fmtDate(data.latestDate)}; freshness window is ${cfg.freshnessWindowDays} days).
+         The ${esc(cfg.name)} feed appears to have stopped updating. Ask Claude to re-evaluate the global outbreak landscape and swap in the current priority outbreak.</span>
        </div>`;
 
-  const maxCount = zones[0].cases || 1;
-  const zoneRows = zones.map(z => {
-    const barW = Math.round((z.cases / maxCount) * 100);
-    const cfr = z.cases > 0 ? ((z.deaths / z.cases) * 100).toFixed(0) + '%' : '—';
+  const barCell = (n, max) => {
+    const w = Math.round((n / (max || 1)) * 100);
+    return `<td class="bar-cell"><div class="bar-bg"><div class="bar-fill" style="width:${w}%"></div></div></td>`;
+  };
+  const rowFor = (item, max) => {
+    const cfr = item.cases > 0 ? ((item.deaths / item.cases) * 100).toFixed(0) + '%' : '—';
     return `<tr>
-      <td>${z.name}</td>
-      <td>${fmt(z.cases)}</td>
-      <td>${z.deaths > 0 ? fmt(z.deaths) + ' (' + cfr + ')' : '0'}</td>
-      <td class="bar-cell"><div class="bar-bg"><div class="bar-fill" style="width:${barW}%"></div></div></td>
+      <td>${esc(item.name)}</td>
+      <td>${fmt(item.cases)}</td>
+      <td>${item.deaths > 0 ? fmt(item.deaths) + ' (' + cfr + ')' : '0'}</td>
+      ${barCell(item.cases, max)}
     </tr>`;
-  }).join('');
+  };
+
+  // Primary breakdown: by country (case location), grouped dynamically.
+  const maxCountry = countries[0].cases || 1;
+  const countryRows = countries.map(c => rowFor(c, maxCountry)).join('');
+
+  // Preserved drill-down: health zones for the largest affected country.
+  const zones = data.zones || [];
+  let zoneBlock = '';
+  if (zones.length && data.drilldownCountry) {
+    const maxZone = zones[0].cases || 1;
+    const zoneRows = zones.map(z => rowFor(z, maxZone)).join('');
+    zoneBlock = `
+      <details class="zone-drill" open>
+        <summary>Health-zone breakdown — ${esc(data.drilldownCountry)} (${zones.length} zone${zones.length !== 1 ? 's' : ''})</summary>
+        <table class="country-table">
+          <thead><tr><th>Health Zone</th><th>Confirmed Cases</th><th>Deaths (CFR)</th><th></th></tr></thead>
+          <tbody>${zoneRows}</tbody>
+        </table>
+      </details>`;
+  }
 
   const natCfr = nat.cases > 0 ? ((nat.deaths / nat.cases) * 100).toFixed(1) + '%' : '—';
-  const newCases = (nat.prevCases !== null) ? nat.cases - nat.prevCases : null;
 
   target.innerHTML = `
     <div class="country-table-wrap">
       ${banner}
       <p style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:12px">
         <strong>${fmt(nat.cases)}</strong> confirmed cases · <strong>${fmt(nat.deaths)}</strong> deaths · CFR <strong>${natCfr}</strong>
-        across ${zones.length} affected health zone${zones.length !== 1 ? 's' : ''}.
-        ${newCases !== null && newCases >= 0 ? `<strong>+${fmt(newCases)}</strong> new confirmed since ${fmtDate(nat.prevDate)}. ` : ''}
+        across ${countries.length} countr${countries.length !== 1 ? 'ies' : 'y'}.
+        ${nat.recentConfirmed > 0 ? `<strong>${fmt(nat.recentConfirmed)}</strong> newly confirmed in the last ${nat.recentWindowDays} days. ` : ''}
+        Confirmed cases only (suspected, probable and discarded records are excluded).
+        Country attribution follows case location, not nationality or travel history.
         Pathogen: <em>${cfg.pathogenDesc}</em>. Tracking started ${fmtDate(cfg.trackingStarted)}.
-        Source: <a href="${cfg.sourceUrl}" target="_blank" rel="noopener" style="color:var(--accent)">${cfg.sourceName}</a>.
+        Source: <a href="${cfg.sourceUrl}" target="_blank" rel="noopener" style="color:var(--accent)">${esc(cfg.sourceName)}</a>
+        · ${esc(cfg.license)} — attribution: ${esc(cfg.attribution)}.
       </p>
       <table class="country-table">
-        <thead><tr><th>Health Zone</th><th>Confirmed Cases</th><th>Deaths (CFR)</th><th></th></tr></thead>
-        <tbody>${zoneRows}</tbody>
+        <thead><tr><th>Country (case location)</th><th>Confirmed Cases</th><th>Deaths (CFR)</th><th></th></tr></thead>
+        <tbody>${countryRows}</tbody>
       </table>
+      ${zoneBlock}
     </div>
   `;
 }
