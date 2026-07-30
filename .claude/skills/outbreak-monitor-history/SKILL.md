@@ -1,13 +1,13 @@
 ---
 name: outbreak-monitor-history
-description: Historical development log for the Outbreak Monitor dashboard (chrisv007/outbreak-monitor) — past bug fixes, threshold-tuning attempts, and what was tried and rejected, for changes already reflected in the current CLAUDE.md. Load this before re-tuning the CDC surfacing thresholds, when a bug or symptom looks like it may have been fixed before, or when asked about this project's history or why a past change was made.
+description: Historical development log for the Outbreak Monitor dashboard (chrisv007/outbreak-monitor), covering past bug fixes, threshold-tuning attempts, and what was tried and rejected, for changes already reflected in the current CLAUDE.md. Load this before re-tuning the CDC surfacing thresholds, when a bug or symptom looks like it may have been fixed before, or when asked about this project's history or why a past change was made.
 ---
 
-# Outbreak Monitor — Development Log
+# Outbreak Monitor Development Log
 
 This is the historical record of changes made to `index.html` and `CLAUDE.md` in this
 repo. The *current* rules, thresholds, and gotchas these entries describe are documented
-in the root `CLAUDE.md` — this log exists for precedent (what was tried, what broke, what
+in the root `CLAUDE.md`. This log exists for precedent (what was tried, what broke, what
 was rejected and why) when investigating a new change or a bug that looks familiar.
 
 | Entry | Description |
