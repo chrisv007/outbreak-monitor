@@ -110,10 +110,13 @@ the *trend* signal; adjust those rather than adding disease names to the trend l
 list you *do* curate by name is `HIGH_CONSEQUENCE_PATTERNS`, and only to widen/narrow the
 additive severity floor — never to gate what the trend signal can surface.
 
-**Surfacing diagnostic (tune from real data, not guesses):** `data.cdc.gov` is unreachable
-from every build/session environment here (egress policy, 403 CONNECT), so the thresholds can
-never be validated against the live feed from inside a session — only in the viewer's browser,
-which *can* reach CDC. To make that possible, `processCDC()` returns `evaluated` (distinct
+**Surfacing diagnostic (tune from real data, not guesses):** `data.cdc.gov` **is reachable
+from a session with full network access.** An earlier version of this file claimed a hard egress
+block on it; that was a property of one restricted environment, not of the host, and it is not
+true in general. Run a `curl` to find out which kind of environment you are in rather than
+assuming either way, and where CDC is reachable, tune these thresholds against a live query.
+The on-page diagnostic stays useful regardless, because it reports what the viewer's browser
+actually received rather than what a session saw. `processCDC()` returns `evaluated` (distinct
 conditions seen, aggregates excluded) and `surfacedCount` (how many passed `isSurfaced` before
 the card cap), plus `highConsequenceCount` (how many surfaced via the severity tier), and
 `renderCDC()` prints them into the `.cdc-note` line under the US section header ("Evaluated N
@@ -152,143 +155,181 @@ Never assume a fixed week number. The dataset lags publication by one to two wee
 reporting ended in May 2023 and COVID-19 was removed from the nationally notifiable condition
 list in July 2024, so the NNDSS feed in Layer 1 does not and will not carry it. Do not go
 looking for a case-count endpoint, and do not add a tile or heading anywhere in this section
-that implies case volume. The section instead carries the surveillance streams that replaced
-case counting, on two deliberately different axes:
+that implies case volume. The section carries the surveillance streams that replaced case
+counting, on three deliberately different axes:
 
 | Axis | Dataset | What it is |
 |---|---|---|
 | **Burden** (observed) | `rdmq-nq56` NSSP ED visit trajectories | Share of all emergency department visits attributable to each pathogen, weekly, by state and sub-state region, with the feed's own trend direction |
-| **Direction** (modeled) | `5dqz-y4ea` CDC Epidemic Trends and Rt | Modeled Rt with uncertainty, trend category and probability of growth, weekly, nowcast so it leads the observed series |
+| **Severity** (observed) | `ua7e-t2fy` NHSN weekly hospital respiratory data | New confirmed admissions per 100k, percent of inpatient beds occupied, and week-over-week change, weekly, by jurisdiction |
+| **Direction** (modelled) | `5dqz-y4ea` CDC Epidemic Trends and Rt | Modelled Rt with uncertainty, trend category and probability of growth, nowcast so it leads the observed series |
 
 `rdmq-nq56` and `5dqz-y4ea` are both derived from the **same upstream NSSP emergency-department
 data**, so they are **not independent confirmations of each other**. The page states this
-explicitly. Read them as burden versus direction, never as two sources agreeing.
+explicitly. Read them as burden versus direction, never as two sources agreeing. NHSN is a
+genuinely separate collection (hospitals reporting their own admissions), so it is the one real
+cross-check in the section.
 
-**Deliberately not used** (revisit only with a reason, and read this first):
-- `2ew6-ywp6` NWSS wastewater: SARS-CoV-2 only, so it adds a third COVID-only panel and no
-  flu/RSV coverage. Earliest signal, but it cannot carry this section's three-pathogen frame.
-- `ua7e-t2fy` NHSN hospital respiratory: a genuine third axis (severity) covering all three
-  pathogens, and the strongest candidate if this section is ever widened. It was left out
-  because a fourth panel on an unverifiable schema is worse than two solid ones.
+**Deliberately not used:** `2ew6-ywp6` NWSS wastewater. Two reasons, both checked against the
+live API rather than assumed. It is SARS-CoV-2 only, so it cannot carry the three-pathogen
+frame. More decisively, **it is stale**: `max(date_end)` is `2025-09-07`, roughly a year behind.
+Descriptions of this dataset as "updated Fridays" no longer match what the ID actually serves.
+Re-check `max(date_end)` before ever reintroducing it.
 
-#### THE SCHEMAS HERE ARE UNVERIFIED. READ THIS BEFORE TOUCHING THE FIELD NAMES.
+#### Confirmed live JSON field names
 
-Unlike every other source in this file, **the column names for `rdmq-nq56` and `5dqz-y4ea` were
-never confirmed against the live API.** `data.cdc.gov` is blocked by egress policy from every
-session environment here (403 on CONNECT), and so is every mirror carrying the schema
-(`dev.socrata.com`, `healthdata.gov`, `catalog.data.gov`, `api.us.socrata.com`, `www.cdc.gov`).
-The standing "API Schema Verification Is Non-Negotiable" rule at the bottom of this file could
-not be satisfied for these two datasets. Both dataset IDs were confirmed to resolve to real,
-currently-published CDC datasets by web search, but **the field names were not read off a live
-response.**
+All three schemas below were read off live `data.cdc.gov` responses, not inferred from dataset
+descriptions or CSV headers.
 
-Because of that, the section does **not** hardcode a guessed schema. Every field in `RESP_ED`
-and `RESP_RT` is a **candidate list**, and `fetchRespED()` / `fetchRespRt()` probe the dataset
-(`$limit=1`), read the keys actually present on a real row, and bind each logical field to
-whichever candidate exists (`pickField`). This is the direct mitigation for the failure mode
-described at the bottom of this file: a guessed schema would have produced `undefined` values
-rendering as blanks or zeros with no error thrown. Instead:
+**`rdmq-nq56` (NSSP ED visits).** Layout is **wide**: one column per pathogen, not one row per
+pathogen.
 
-- If a **required** field cannot be bound, the section renders a loud error naming the logical
-  field **and listing the real column names the API returned** (`schemaError`), so the candidate
-  list can be corrected in one pass from the live page.
-- A **diagnostic line** under the section header (`#respNote`, same idea as `.cdc-note`) prints
-  what was actually resolved: layout shape, bound column names, jurisdiction count, week ending,
-  which pathogens are currently estimated. **Read this line on the live site before editing any
-  field name.**
+| Field | Meaning |
+|---|---|
+| `week_end` | Week ending date, `calendar_date` (`"2026-08-22T00:00:00.000"`) |
+| `geography` | Full state name, or `United States` on the national row |
+| `county` | `All` on state and national rows; a county name on sub-state rows |
+| `trend_source` | `State` / `HSA` / `United States`, the row-granularity discriminator |
+| `percent_visits_covid`, `percent_visits_influenza`, `percent_visits_rsv` | Percent of all ED visits |
+| `percent_visits_combined` | All three combined |
+| `percent_visits_smoothed_covid`, `percent_visits_smoothed_1`, `percent_visits_smoothed_rsv` | Smoothed variants. **Note `_1` is influenza**, a Socrata name collision, not a typo. `percent_visits_smoothed` (unsuffixed) is *combined*. |
+| `ed_trends_covid`, `ed_trends_influenza`, `ed_trends_rsv` | Trend text |
+| `hsa`, `hsa_counties`, `hsa_nci_id`, `fips`, `buildnumber` | Geography and build metadata |
 
-**When you can reach the live feeds, do this:** load the page, read `#respNote`, and record the
-real column names here. Then keep the candidate lists (they cost nothing and absorb future
-schema drift) but move the confirmed name to the front of each list. Add newly observed
-spellings rather than replacing the list.
+`ed_trends_*` vocabulary, confirmed by grouping the whole table: `Increasing`, `Decreasing`,
+`No Change`, `Data Unavailable`, `Limited Data`, `Sparse`, `No Data`. Only the first three are
+directions. The rest are reporting states and must not be rendered as if they were trends.
+
+**`ua7e-t2fy` (NHSN hospital).** Very wide (300+ columns). Only these are used:
+
+| Field | Meaning |
+|---|---|
+| `weekendingdate` | Week ending date, `calendar_date` |
+| `jurisdiction` | **Postal abbreviation** (`MN`), plus `USA` and `Region 1`..`Region 10` |
+| `totalconfc19newadmper100k`, `totalconfflunewadmper100k`, `totalconfrsvnewadmper100k` | New confirmed admissions per 100k |
+| `pctconfc19inptbeds`, `pctconffluinptbeds`, `pctconfrsvinptbeds` | Percent of inpatient beds occupied |
+| `totalconfc19newadmpctchg`, `totalconfflunewadmpctchg`, `totalconfrsvnewadmpctchg` | Week-over-week percent change |
+
+**`5dqz-y4ea` (Epidemic Trends and Rt).**
+
+| Field | Meaning |
+|---|---|
+| `as_of` | Modelling-run vintage, `calendar_date`. New vintage weekly. |
+| `date` | Estimate date. **Daily, not weekly.** One vintage carries a 29-day series ending on `as_of`. |
+| `disease` | `COVID-19`, `Influenza`, `RSV` |
+| `state` | **Full state name** (`Minnesota`), 51 jurisdictions, **no national row** |
+| `median`, `lower`, `upper` | Rt point estimate and interval bounds |
+| `interval_width` | `0.95`, or absent when not estimated |
+| `p_growing` | Probability of epidemic growth, 0 to 1 |
+| `category` | `Growing`, `Likely Growing`, `Not Changing`, `Likely Declining`, `Declining`, `Not Estimated` |
+
+**Geography vocabularies differ and must be reconciled.** NSSP and Rt both use full state
+names; NHSN uses postal abbreviations. `STATE_ABBR` in `index.html` is what joins them. Without
+it the Minnesota row silently loses its admissions figures.
 
 #### Query patterns
 
-Same never-assume-a-fixed-week discipline as NNDSS. Step 0 is a schema probe.
+Same never-assume-a-fixed-week discipline as NNDSS.
 
 ```
-# 0. probe the schema (read the keys off a real row)
-GET https://data.cdc.gov/resource/rdmq-nq56.json?$limit=1
+# NSSP: latest published week, then that week's state + national rows
+GET rdmq-nq56.json?$select=max(week_end) as latest
+GET rdmq-nq56.json?$where=week_end='<latest>T00:00:00.000' AND trend_source in('State','United States')
 
-# 1. latest published week (falls back to $order=<week> DESC&$limit=1 if the aggregate is rejected)
-GET https://data.cdc.gov/resource/rdmq-nq56.json?$select=max(<weekField>) as latest
+# NHSN: same shape
+GET ua7e-t2fy.json?$select=max(weekendingdate) as latest
+GET ua7e-t2fy.json?$where=weekendingdate='<latest>T00:00:00.000'
 
-# 2. all rows for that week
-GET https://data.cdc.gov/resource/rdmq-nq56.json?$where=<weekField> >= '<latest>'&$limit=50000
+# Rt: latest vintage, its newest estimate date, and the per-disease last real estimate
+GET 5dqz-y4ea.json?$select=max(as_of) as latest
+GET 5dqz-y4ea.json?$select=max(date) as latest_date&$where=as_of='<latest>T00:00:00.000'
+GET 5dqz-y4ea.json?$select=disease, max(date) as last_estimated&$where=median IS NOT NULL&$group=disease
+GET 5dqz-y4ea.json?$where=as_of='<latest>T00:00:00.000' AND date='<latest_date>T00:00:00.000'
 ```
 
-```
-# 0. probe the schema
-GET https://data.cdc.gov/resource/5dqz-y4ea.json?$limit=1
-
-# 1. LAST ESTIMATE DATE PER DISEASE. This is the seasonality signal, read from the
-#    data rather than assumed. It is what separates an expected seasonal pause from
-#    a genuinely stale feed.
-GET https://data.cdc.gov/resource/5dqz-y4ea.json?$select=<diseaseField>, max(<dateField>) as last_date&$group=<diseaseField>
-
-# 2. current estimates for every location
-GET https://data.cdc.gov/resource/5dqz-y4ea.json?$where=<dateField> >= '<latest>'&$limit=50000
-```
+`calendar_date` filters need the full `T00:00:00.000` suffix. The
+`$where=median IS NOT NULL` grouped query is the seasonality signal, read from the data rather
+than assumed. See below.
 
 #### Quirks and design rules
 
-- **The ED dataset may be LONG or WIDE and the code handles both.** Long is one row per
-  (week, geography, pathogen) with a pathogen column plus one percent column; wide is one
-  percent column per pathogen (`percent_visits_covid`, ...). `fetchRespED` detects which by
-  inspecting the resolved keys. Do not collapse this to one shape until the live layout is
-  confirmed off `#respNote`.
-- **Sub-state rows must be excluded or every state double-counts.** The dataset carries state
-  rows *and* sub-state (HSA/county) rows. State-level rows are the ones where the sub-state
-  column is blank or `All`. This is the same class of bug as the NNDSS aggregate-area rollups.
-- **The two feeds may label geography differently** (full state name vs postal abbreviation).
-  `canonState()` normalizes both to the full state name so the modeled Rt column can be joined
-  onto the observed ED row. Without it the Minnesota row silently loses its Rt value.
-- **Absent is never rendered as zero.** These are percentages: `0%` is a claim that activity is
-  nil, so a missing value renders as "no data". `num()` coerces blanks to 0 and must not be used
-  here; use `numOrNull()`.
-- **Minnesota is pinned and highlighted** in the state table (`.mn-row`, same convention as the
-  NNDSS breakdown), shown even when MN has no published row, and then as an explicit "no data".
+- **Socrata omits null fields entirely from JSON rows.** A state with no reported percentage
+  does not return `"percent_visits_covid": null`; the key is simply absent. Iowa is the live
+  example: on 2026-08-22 its state row carries no `percent_visits_*` keys at all and
+  `ed_trends_* = "Data Unavailable"`. **Absent is never zero.** These are percentages and rates,
+  so `0%` is a claim that activity is nil, which is a different statement from "not reported".
+  `num()` coerces blanks to 0 and must not be used in this section; use `numOrNull()`.
+- **Sub-state rows must be excluded or every state double-counts.** Filter on
+  `trend_source='State'`, not on `county`. The table holds 640k HSA rows against 10k state rows.
+  Same class of bug as the NNDSS regional rollups.
+- **NHSN carries its own rollups**: `USA` plus `Region 1` through `Region 10`. Drop the regions,
+  use `USA` only as the explicit national figure. NHSN also covers five territories that NSSP
+  and Rt do not; they are excluded from the state table so no row has one column filled and two
+  permanently blank.
+- **Minnesota is pinned and highlighted** in every state table (`.mn-row`, same convention as
+  the NNDSS breakdown), shown even when MN has no published row, and then as an explicit
+  "no data".
+- **No respiratory tile was added to the summary bar.** Every tile there is a case count; a
+  percentage or a modelled Rt sitting alongside them would read as one, which is exactly the
+  confusion this section exists to prevent.
 
-#### Rt constraints (all four are load-bearing, do not regress them)
+#### Rt constraints (all load-bearing, do not regress them)
 
 1. **Rt measures direction only, never burden.** An Rt below 1 means transmission is shrinking,
-   *not* that activity is low. Rt is never presented alone: it always sits under the observed ED
-   burden block in the same card, and the card text says so in as many words.
-2. **Flu and RSV Rt is seasonal, and the off-season is a FIRST-CLASS STATE, not an edge case.**
-   Estimates stopped **2026-05-29** for the 2025-2026 season and resume in fall 2026. That is the
-   normal condition for roughly a third of every year. Off-season renders as an explicit calm
-   amber "Off-season, not currently estimated" state: never an error, never a gap, never a zero.
-   **The stale/seasonal distinction is the whole point.** `respRtStatus()` decides using the
-   per-disease last-estimate date from the grouped query above plus the season window
-   (`RT_SEASON_START_MONTH` = 10 through `RT_SEASON_END_MONTH` = 5): silence outside the window
-   for a seasonal pathogen is an expected pause (amber `freshness-paused`); the same silence
-   *inside* the window, or any silence for year-round COVID-19, is genuine staleness (red
-   `freshness-stale`). Conflating the two would fire a false alarm every summer, and would miss
-   a real outage every winter.
-3. **"Not estimated" is not "no data".** Rt is not estimated for a state when ED visit volume is
-   too low, an anomaly is detected, or the model fails reliability checks. A row present in the
-   feed with a null estimate renders as "not estimated"; a location absent from the feed renders
-   as "no data". Keep these two distinct in both the card and the state table.
-4. **Methods break on 2026-06-01** (EpiNow2 replaced by a hierarchical GAM). Any series spanning
-   that date has a methodological seam. The section stays strictly inside the current method:
-   only the latest estimates are shown, and if the newest estimate ever predates
-   `RT_METHOD_CHANGE_DATE` the page renders an explicit methods-break warning rather than
-   silently stitching two methods together.
+   *not* that activity is low. Rt is never presented alone: it always sits under the observed
+   burden and severity blocks in the same card, and the card text says so in as many words.
+2. **Seasonality is expressed in the data, not by rows disappearing. This was the key
+   correction.** Flu and RSV rows **keep publishing all summer**. They simply carry
+   `category = "Not Estimated"` with no `median`. Confirmed on the 2026-08-25 vintage: 1,479
+   Influenza rows and 1,479 RSV rows, every one `Not Estimated`, while COVID-19 has 1,363
+   `Growing`. So **"is this feed still publishing" and "is this pathogen currently estimated"
+   are two independent questions**, and reading them separately is what keeps a normal summer
+   from firing a stale-feed alarm. Do not implement the off-season as "rows are missing".
+   - The last real flu and RSV estimate is **2026-05-26** (`max(date)` where `median IS NOT
+     NULL`), not the 29 May date quoted in some briefs.
+   - **The estimation window was read off the feed, not assumed.** Grouping non-null medians by
+     month returns **September through May** in both the 2024-25 and 2025-26 seasons, with June,
+     July and August empty. `RT_SEASON_MONTHS` encodes that.
+   - `RT_CORE_SEASON_MONTHS` (Nov-Apr) is deliberately narrower. A seasonal pathogen going
+     unestimated in deep winter is genuinely odd and gets flagged; September, October and May
+     are shoulder months where a pause is unremarkable and would otherwise fire a false alarm at
+     each season edge.
+3. **"Not estimated" is not "no data".** Rt is withheld for a state when ED visit volume is too
+   low, an anomaly is detected, or the model fails reliability checks. A row present with a null
+   median renders as "not estimated"; a location absent from the feed renders as "no data".
+   Iowa is the live example on the current vintage. Keep the two distinct in card and table.
+4. **Methods break on 2026-06-01** (EpiNow2 replaced by a hierarchical GAM). The section stays
+   strictly inside one `as_of` vintage, so no displayed series spans the seam. Because the last
+   flu and RSV estimate (2026-05-26) predates it, the off-season card annotates that those
+   values came from the previous method and are not comparable to current-method numbers.
 
 #### Freshness
 
-The ED feed is reported year-round for all three pathogens (off-season the percentages fall near
-zero, the reporting does not stop), so silence there is always a real problem and gets the red
-`freshness-stale` banner after `freshnessWindowDays` (14). The Rt feed gets the seasonal logic
-above instead. The two banners are separate elements and can both be shown at once.
+Three independent indicators, one per feed, because a seasonal pause in one is not a problem in
+the others. Each compares the feed's own latest date against the viewer's clock over
+`RESP_FRESHNESS_WINDOW_DAYS` (14).
 
-**Verification note:** the schemas could not be checked against the live API (see above), but the
-*rendering and decision logic* was verified end to end in headless Chromium against stubbed
-Socrata responses, across five scenarios: long layout, wide layout, unresolvable schema, a stale
-year-round feed, and a January clock (where flu/RSV silence correctly escalates from amber
-off-season to red stale). Confirmed in those runs: sub-state rows excluded, MN pinned and joined
-across the name/abbreviation boundary, "no data" vs "not estimated" rendered distinctly, no
-zero substituted for a missing percentage, and no page errors.
+`respRtStatus()` then resolves the Rt card into exactly one of five states, in this precedence:
+
+| State | Condition | Rendering |
+|---|---|---|
+| `error` | Feed could not be read | Neutral note; burden blocks unaffected |
+| `stale` | No new `as_of` vintage inside the window | Red. A feed fault, explicitly *not* a seasonal pause |
+| `active` | Pathogen has real estimates in the current vintage | Rt value, interval, category, growth probability |
+| `paused-seasonal` | Feed fresh, pathogen unestimated, seasonal pathogen outside core season | Calm amber "off-season, not currently estimated" |
+| `paused-unexpected` | Feed fresh, pathogen unestimated, but in core season or year-round (COVID-19) | Red, flagged as not the usual pause |
+
+Feed staleness outranks everything, including an active estimate. A year-round pathogen never
+receives the calm seasonal treatment.
+
+**Verification:** every field name and every query above returned live HTTP 200 rows from
+`data.cdc.gov` before any code was written. Rendering and decision logic were then checked in
+headless Chromium at 320, 390, 430 and 1200px against live payloads, plus forced scenarios:
+stale Rt feed, stale ED feed, NHSN down, all three down, Minnesota absent from the Rt feed,
+Minnesota present but not estimated, and a January clock with a fresh feed still reporting flu
+unestimated. A 19-assertion unit sweep over `respRtStatus()` covers all twelve months and the
+stale-versus-seasonal precedence. No console errors and no horizontal page overflow at any
+width.
 
 ---
 
@@ -369,8 +410,8 @@ past it the banner flips to a red STALE / replace-this-section warning. This is 
 knows when to have the featured outbreak swapped out. It is driven off the file's own dates, not
 an assumption that the feed updates forever.
 
-**Verification note:** unlike CDC (egress-blocked here), the Global.health raw CSV **is**
-reachable from the session environment (CORS-open, confirmed HTTP 200). Every change to this
+**Verification note:** the Global.health raw CSV is CORS-open and reachable (confirmed HTTP
+200). Every change to this
 section was validated against the live file: a Node aggregation simulation (2,094 confirmed;
 DRC 2,073 / Uganda 20 / France 1; 798 deaths; 46 DRC zones; latest 2026-07-16 with the
 malformed value correctly *not* poisoning the max; 572 confirmed in 14d) plus a headless
@@ -421,22 +462,23 @@ curl -s "https://data.cdc.gov/resource/x9gk-5huc.json?\$where=year='2025'%20AND%
 
 If the response is an empty array `[]`, the query is wrong. Do not commit until you see rows.
 
-**When the rule cannot be satisfied (egress-blocked hosts).** `data.cdc.gov` is unreachable from
-every session environment here, so this `curl` cannot actually be run for any CDC dataset from
-inside a session. Where a schema was confirmed in an environment that *could* reach the host, the
-confirmed names are recorded above and should be trusted. Where it never could be (the two
-respiratory datasets, `rdmq-nq56` and `5dqz-y4ea`), the code does not get to guess quietly. The
-required pattern is:
+**This rule was once waived, and the waiver was a mistake worth remembering.** The respiratory
+section was first built in a session whose egress policy blocked `data.cdc.gov`, so its column
+names were never read off a live response. Rather than stop, that version compensated with
+machinery: every field became a candidate list, the code probed each dataset at page load and
+bound each logical field to whichever column happened to exist, and a diagnostic line printed
+the resolved schema onto the page so someone with network access could read it back. It was a
+careful design for a problem that should not have been accepted in the first place.
 
-1. **Never hardcode an unverified field name.** Use a candidate list plus a runtime probe that
-   binds each logical field to whichever column the live dataset actually has (`pickField`).
-2. **Fail loudly, not silently.** An unresolvable required field must raise an error that names
-   the logical field and lists the real columns the API returned (`schemaError`). A blank panel
-   is the failure mode this whole section exists to prevent.
-3. **Print what was resolved onto the page.** The viewer's browser is the only place these feeds
-   are reachable, so the resolved schema has to be readable off the live site
-   (`#respNote`, `.cdc-note`).
-4. **Record the truth once someone can see it.** Read that diagnostic line on the live site and
-   write the confirmed names back into this file.
+When the same datasets were finally curled, the guesses turned out to be wrong in ways the
+probing could not have recovered from. The ED feed is wide rather than long, its influenza
+smoothed column is named `percent_visits_smoothed_1`, the Rt feed is daily rather than weekly
+and has no national row, and, most importantly, the seasonal pause is expressed as rows that
+keep publishing with `category = "Not Estimated"` rather than as rows going missing, which is
+the opposite of what the code was built to detect. No amount of runtime binding finds a
+behaviour the design never anticipated.
 
-This is a mitigation, not a substitute. If you can reach the host, still run the `curl`.
+The lesson is not "write better fallbacks". It is: **if the schema cannot be verified, the
+honest move is to say so and stop, not to build an elaborate mechanism that makes an unverified
+guess look rigorous.** A candidate-list probe is a reasonable tactic for absorbing future schema
+drift on a feed you have already confirmed. It is not a substitute for confirming it once.
