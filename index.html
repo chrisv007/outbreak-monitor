@@ -553,6 +553,242 @@ main { padding: 24px 0 48px; }
 }
 .who-link:hover { text-decoration: underline; }
 
+
+/* ── Respiratory Virus Surveillance ── */
+/* These feeds carry rates, percentages and modeled estimates. There are no US
+   case counts for COVID-19 any more, so this section deliberately does NOT reuse
+   .disease-card, whose this-week / YTD / YTD-prior / YoY shape only makes sense
+   for counts. Each pathogen gets a panel split into an OBSERVED block (measured
+   surveillance) and a visually distinct MODELED block (estimates). */
+.resp-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
+@media (min-width: 720px)  { .resp-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 1040px) { .resp-grid { grid-template-columns: repeat(3, 1fr); } }
+
+.resp-card {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.resp-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 14px 10px;
+}
+.resp-name {
+  font-family: 'Fraunces', serif;
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.resp-subname {
+  display: block;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.66rem;
+  font-weight: 400;
+  color: var(--text-muted);
+  letter-spacing: 0;
+}
+
+.resp-block { padding: 0 14px 12px; }
+.resp-block-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.57rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--text-muted);
+  margin-bottom: 7px;
+}
+.resp-tag {
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 0.54rem;
+  letter-spacing: 0.05em;
+  text-transform: none;
+}
+.resp-tag-obs { background: #E6EDE4; color: #3F5C33; }
+.resp-tag-mod { background: #EDE3D6; color: var(--accent); }
+
+/* The modeled block must never read as observed surveillance. Dashed rule plus a
+   tinted ground carry that distinction without relying on the badge alone. */
+.resp-block-modeled {
+  background: #F2EEE6;
+  border-top: 1px dashed #C8BFAE;
+  padding-top: 10px;
+}
+.resp-block-observed { border-top: 1px solid var(--card-border); padding-top: 10px; }
+
+/* Compact MN / US mini-table. Tabular numerals keep the two columns aligned so
+   the state-vs-national gap is scannable at a glance on a phone. */
+.resp-table {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  column-gap: 12px;
+  row-gap: 3px;
+  align-items: baseline;
+}
+.resp-table .rh {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.56rem;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  text-align: right;
+}
+.resp-table .rl {
+  font-size: 0.71rem;
+  color: var(--text-secondary);
+  line-height: 1.3;
+}
+.resp-table .rl small { display: block; font-size: 0.62rem; color: var(--text-muted); }
+.resp-table .rv {
+  font-family: 'JetBrains Mono', monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.82rem;
+  font-weight: 500;
+  text-align: right;
+  white-space: nowrap;
+}
+.resp-table .rv.mn { color: #3F5C33; }
+.resp-table .rv-none { color: var(--text-muted); font-size: 0.7rem; font-weight: 400; }
+
+/* 12-week trajectory. Shared y-scale across all three pathogens so a near-zero
+   summer series renders as the flat line it actually is, instead of being
+   auto-scaled into a dramatic-looking climb. */
+.resp-spark { margin-top: 8px; }
+.resp-spark svg { display: block; width: 100%; height: 26px; overflow: visible; }
+.resp-spark-cap {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.55rem;
+  color: var(--text-muted);
+  letter-spacing: 0.03em;
+  margin-top: 2px;
+}
+
+.resp-rt-headline {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 2px;
+}
+.resp-rt-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 1.4rem;
+  font-weight: 500;
+  line-height: 1.1;
+}
+.resp-rt-ci {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.66rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.resp-rt-meta { font-size: 0.7rem; color: var(--text-secondary); margin-top: 3px; }
+.resp-rt-caveat {
+  font-size: 0.66rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+  margin-top: 7px;
+  padding-top: 6px;
+  border-top: 1px solid #E0D8C9;
+}
+
+/* Off-season is a first-class state for flu and RSV, not an error or a gap. */
+.resp-state-note {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  border-radius: 7px;
+  padding: 9px 10px;
+  font-size: 0.7rem;
+  line-height: 1.45;
+}
+.resp-state-paused { background: #F5EFE2; color: #6B5320; border-left: 3px solid var(--risk-moderate); }
+.resp-state-unexpected { background: #F5ECEC; color: #7A2020; border-left: 3px solid var(--risk-high); }
+.resp-state-none { background: #F0EDE8; color: var(--text-secondary); border-left: 3px solid var(--text-muted); }
+.resp-state-note span > strong:first-child { display: block; margin-bottom: 1px; }
+
+.resp-trend-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.6rem;
+  font-weight: 500;
+  padding: 3px 8px;
+  border-radius: 999px;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.resp-card-footer {
+  margin-top: auto;
+  border-top: 1px solid var(--card-border);
+  padding: 8px 14px;
+}
+.resp-expand {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  letter-spacing: 0.03em;
+}
+.resp-expand:hover { color: var(--accent); }
+.resp-states { display: none; padding: 0 0 4px; }
+.resp-states.open { display: block; }
+.resp-states-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; margin-top: 8px; }
+.resp-states .state-table { min-width: 268px; }
+.resp-states .state-table td { white-space: nowrap; }
+
+/* Per-feed freshness. A seasonal pause and a dead feed must not look alike. */
+.resp-feeds { display: grid; grid-template-columns: 1fr; gap: 8px; margin-bottom: 14px; }
+@media (min-width: 720px) { .resp-feeds { grid-template-columns: repeat(3, 1fr); } }
+.resp-feed {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  font-size: 0.7rem;
+  line-height: 1.4;
+}
+.resp-feed .freshness-dot { margin-top: 3px; }
+.resp-feed-name {
+  display: block;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.57rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+.resp-explainer {
+  background: #F0EDE6;
+  border: 1px solid var(--card-border);
+  border-left: 3px solid var(--accent);
+  border-radius: 7px;
+  padding: 10px 12px;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  margin-bottom: 14px;
+}
+.resp-explainer strong { color: var(--text-primary); }
+
 /* ── Loading / Error ── */
 .loading-block {
   background: var(--card-bg);
@@ -704,7 +940,19 @@ footer a { color: var(--text-secondary); }
       </div>
     </div>
 
-    <!-- Section 2: Global Priority Outbreaks -->
+    <!-- Section 2: Respiratory Virus Surveillance -->
+    <div class="section">
+      <div class="section-header">
+        <span class="section-title">🫁 Respiratory Virus Activity</span>
+        <span class="section-desc">COVID-19, influenza, RSV · observed emergency department and hospital burden, with modelled transmission direction · rates and percentages, not case counts</span>
+      </div>
+      <div class="cdc-note" id="respNote"></div>
+      <div id="respSection">
+        <div class="loading-block"><div class="spinner"></div>Loading respiratory surveillance…</div>
+      </div>
+    </div>
+
+    <!-- Section 3: Global Priority Outbreaks -->
     <div class="section">
       <div class="section-header">
         <span class="section-title">🌍 Global Priority Outbreaks</span>
@@ -715,7 +963,7 @@ footer a { color: var(--text-secondary); }
       </div>
     </div>
 
-    <!-- Section 3: WHO Alerts -->
+    <!-- Section 4: WHO Alerts -->
     <div class="section">
       <div class="section-header">
         <span class="section-title">🌐 WHO Global Alerts</span>
@@ -732,10 +980,13 @@ footer a { color: var(--text-secondary); }
 <footer>
   <div class="container">
     Data sources: <a href="https://data.cdc.gov/NNDSS/NNDSS-Weekly-Data/x9gk-5huc" target="_blank">CDC NNDSS</a> ·
+    <a href="https://data.cdc.gov/d/rdmq-nq56" target="_blank">CDC NSSP ED visits</a> ·
+    <a href="https://data.cdc.gov/d/ua7e-t2fy" target="_blank">CDC NHSN hospital respiratory</a> ·
+    <a href="https://data.cdc.gov/d/5dqz-y4ea" target="_blank">CDC Epidemic Trends and Rt</a> ·
     <a href="https://github.com/globaldothealth/outbreak-data/tree/main/Ebola%20BVD" target="_blank">Global.health Ebola BVD 2026 line list</a> (CC BY 4.0) ·
     <a href="https://www.who.int/emergencies/disease-outbreak-news" target="_blank">WHO DON</a> ·
     For situational awareness only — not a clinical resource.
-    <div class="build-timestamp">Dashboard page last modified: 2026-07-17 01:30 AM CDT</div>
+    <div class="build-timestamp">Dashboard page last modified: 2026-08-28 02:12 PM CDT</div>
   </div>
 </footer>
 
@@ -1123,8 +1374,210 @@ async function fetchCDC() {
   return { rows, year: currentYear, week: latestWeek, weekUrl, rowsUrl };
 }
 
+
 // ════════════════════════════════════════════════════════
-//  FETCH 2: FEATURED OUTBREAK (case line list, all countries)
+//  FETCH 2: RESPIRATORY VIRUS SURVEILLANCE (COVID-19, flu, RSV)
+// ════════════════════════════════════════════════════════
+// There are no US COVID-19 case counts to fetch. Aggregate case reporting ended
+// May 2023 and COVID-19 left the nationally notifiable list in July 2024, so the
+// NNDSS feed above does not and will not carry it. What replaced case counting is
+// three separate surveillance streams, and this section reads them on three
+// deliberately different axes:
+//
+//   BURDEN    rdmq-nq56  NSSP  share of all ED visits           (observed)
+//   SEVERITY  ua7e-t2fy  NHSN  hospital admissions per 100k     (observed)
+//   DIRECTION 5dqz-y4ea  CFA   modeled Rt, nowcast              (modeled)
+//
+// NSSP and the Rt model share an upstream data system, so they are burden versus
+// direction, NOT two independent confirmations of each other. NHSN is a genuinely
+// separate collection (hospitals reporting admissions), so it is the one real
+// cross-check here. The page says so.
+//
+// Every field name below was read off a live response from data.cdc.gov, not
+// inferred from a dataset description or a CSV header. See CLAUDE.md.
+
+const RESP_FRESHNESS_WINDOW_DAYS = 14;
+
+// The Rt method changed on this date (EpiNow2 replaced by a hierarchical GAM).
+// Estimates either side of it are not directly comparable, so anything shown from
+// before it gets an explicit seam warning.
+const RT_METHOD_CHANGE_DATE = '2026-06-01';
+
+// Months in which flu and RSV Rt is actually estimated. Read off the feed rather
+// than assumed: querying non-null medians by month returns September through May
+// in both the 2024-25 and 2025-26 seasons, with June, July and August empty.
+const RT_SEASON_MONTHS = [9, 10, 11, 12, 1, 2, 3, 4, 5];
+// Deep winter, when a seasonal pathogen going unestimated would be genuinely odd
+// rather than the normal annual pause. September, October and May are shoulder
+// months where a pause is unremarkable, so they are left out on purpose.
+const RT_CORE_SEASON_MONTHS = [11, 12, 1, 2, 3, 4];
+
+const RESP_PATHOGENS = [
+  {
+    key: 'covid', label: 'COVID-19', sub: 'SARS-CoV-2',
+    rtDisease: 'COVID-19',
+    // COVID-19 Rt is estimated year-round, so silence here is never seasonal.
+    seasonalRt: false,
+    edPct: 'percent_visits_covid', edTrend: 'ed_trends_covid',
+    hospRate: 'totalconfc19newadmper100k', hospBeds: 'pctconfc19inptbeds',
+    hospChg: 'totalconfc19newadmpctchg'
+  },
+  {
+    key: 'flu', label: 'Influenza', sub: 'seasonal flu',
+    rtDisease: 'Influenza',
+    seasonalRt: true,
+    edPct: 'percent_visits_influenza', edTrend: 'ed_trends_influenza',
+    hospRate: 'totalconfflunewadmper100k', hospBeds: 'pctconffluinptbeds',
+    hospChg: 'totalconfflunewadmpctchg'
+  },
+  {
+    key: 'rsv', label: 'RSV', sub: 'respiratory syncytial virus',
+    rtDisease: 'RSV',
+    seasonalRt: true,
+    edPct: 'percent_visits_rsv', edTrend: 'ed_trends_rsv',
+    hospRate: 'totalconfrsvnewadmper100k', hospBeds: 'pctconfrsvinptbeds',
+    hospChg: 'totalconfrsvnewadmpctchg'
+  }
+];
+
+// NSSP and the Rt feed both use full state names; NHSN uses postal abbreviations.
+// This map is what lets the severity column join onto the same row as the other
+// two. Without it Minnesota silently loses its admissions figures.
+const STATE_ABBR = {
+  'Alabama':'AL','Alaska':'AK','Arizona':'AZ','Arkansas':'AR','California':'CA',
+  'Colorado':'CO','Connecticut':'CT','Delaware':'DE','District of Columbia':'DC',
+  'Florida':'FL','Georgia':'GA','Hawaii':'HI','Idaho':'ID','Illinois':'IL',
+  'Indiana':'IN','Iowa':'IA','Kansas':'KS','Kentucky':'KY','Louisiana':'LA',
+  'Maine':'ME','Maryland':'MD','Massachusetts':'MA','Michigan':'MI','Minnesota':'MN',
+  'Mississippi':'MS','Missouri':'MO','Montana':'MT','Nebraska':'NE','Nevada':'NV',
+  'New Hampshire':'NH','New Jersey':'NJ','New Mexico':'NM','New York':'NY',
+  'North Carolina':'NC','North Dakota':'ND','Ohio':'OH','Oklahoma':'OK','Oregon':'OR',
+  'Pennsylvania':'PA','Rhode Island':'RI','South Carolina':'SC','South Dakota':'SD',
+  'Tennessee':'TN','Texas':'TX','Utah':'UT','Vermont':'VT','Virginia':'VA',
+  'Washington':'WA','West Virginia':'WV','Wisconsin':'WI','Wyoming':'WY'
+};
+
+// Percentages and rates, so a missing value is NOT zero. Rendering an absent
+// figure as 0% would be a claim that activity is nil, which is a different
+// statement from "this was not reported". num() coerces blanks to 0 and must not
+// be used anywhere in this section.
+const numOrNull = v =>
+  (v === null || v === undefined || v === '' || isNaN(+v)) ? null : +v;
+
+// Socrata calendar_date columns come back as "2026-08-22T00:00:00.000".
+const isoDay = v => {
+  const s = String(v == null ? '' : v).trim();
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] : null;
+};
+
+async function socrataJSON(datasetId, params) {
+  const url = `https://data.cdc.gov/resource/${datasetId}.json?` +
+    new URLSearchParams(params).toString();
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`data.cdc.gov/${datasetId} returned ${r.status}`);
+  return r.json();
+}
+
+// ── Burden: NSSP emergency department visit trajectories (rdmq-nq56) ──
+// The feed carries state rows, sub-state HSA rows and one national row in the
+// same table. trend_source is the clean discriminator ("State" / "HSA" /
+// "United States"); filtering on it is what stops sub-state rows double-counting
+// a state, the same class of bug as the NNDSS regional rollups.
+async function fetchRespED() {
+  const latestRows = await socrataJSON('rdmq-nq56', { '$select': 'max(week_end) as latest' });
+  const weekEnd = isoDay(latestRows?.[0]?.latest);
+  if (!weekEnd) throw new Error('no week_end published in rdmq-nq56');
+
+  // Twelve weeks back from the latest published week, for the trajectory line.
+  const histStart = new Date(weekEnd + 'T00:00:00');
+  histStart.setDate(histStart.getDate() - 7 * 11);
+  const histStartISO = histStart.toISOString().slice(0, 10);
+
+  const [rows, history] = await Promise.all([
+    socrataJSON('rdmq-nq56', {
+      '$select': 'geography,trend_source,percent_visits_covid,percent_visits_influenza,' +
+                 'percent_visits_rsv,ed_trends_covid,ed_trends_influenza,ed_trends_rsv',
+      '$where': `week_end='${weekEnd}T00:00:00.000' AND trend_source in('State','United States')`,
+      '$limit': '200'
+    }),
+    socrataJSON('rdmq-nq56', {
+      '$select': 'week_end,geography,percent_visits_covid,percent_visits_influenza,percent_visits_rsv',
+      '$where': `trend_source in('State','United States') AND geography in('Minnesota','United States') ` +
+                `AND week_end >= '${histStartISO}T00:00:00.000'`,
+      '$order': 'week_end',
+      '$limit': '200'
+    })
+  ]);
+
+  return { weekEnd, rows, history };
+}
+
+// ── Severity: NHSN weekly hospital respiratory data (ua7e-t2fy) ──
+// jurisdiction mixes real jurisdictions with a national "USA" row and ten
+// "Region N" HHS rollups. The rollups are dropped for the same reason the NNDSS
+// census-division rows are.
+async function fetchRespHosp() {
+  const latestRows = await socrataJSON('ua7e-t2fy', { '$select': 'max(weekendingdate) as latest' });
+  const weekEnd = isoDay(latestRows?.[0]?.latest);
+  if (!weekEnd) throw new Error('no weekendingdate published in ua7e-t2fy');
+
+  const rows = await socrataJSON('ua7e-t2fy', {
+    '$select': 'jurisdiction,totalconfc19newadmper100k,totalconfflunewadmper100k,' +
+               'totalconfrsvnewadmper100k,pctconfc19inptbeds,pctconffluinptbeds,' +
+               'pctconfrsvinptbeds,totalconfc19newadmpctchg,totalconfflunewadmpctchg,' +
+               'totalconfrsvnewadmpctchg',
+    '$where': `weekendingdate='${weekEnd}T00:00:00.000'`,
+    '$limit': '200'
+  });
+
+  return { weekEnd, rows };
+}
+
+// ── Direction: CDC Epidemic Trends and Rt (5dqz-y4ea) ──
+// Weekly vintages (as_of), each carrying a 29-day daily series ending on the
+// vintage date. Staying inside one vintage keeps every value on one side of the
+// 2026-06-01 methods break instead of silently stitching two methods together.
+//
+// The seasonal-pause signal is read from the feed, not assumed: rows for flu and
+// RSV keep publishing all summer, they just carry category "Not Estimated" with
+// no median. So "is this pathogen currently estimated" and "is this feed still
+// publishing" are two independent questions, which is exactly what keeps an
+// expected summer pause from firing a stale-feed alarm.
+async function fetchRespRt() {
+  const vintageRows = await socrataJSON('5dqz-y4ea', { '$select': 'max(as_of) as latest' });
+  const asOf = isoDay(vintageRows?.[0]?.latest);
+  if (!asOf) throw new Error('no as_of published in 5dqz-y4ea');
+
+  const [dateRows, lastEstimated] = await Promise.all([
+    socrataJSON('5dqz-y4ea', {
+      '$select': 'max(date) as latest_date',
+      '$where': `as_of='${asOf}T00:00:00.000'`
+    }),
+    // Last date each disease carried a real estimate. median IS NOT NULL is the
+    // filter that separates a published-but-unestimated row from a real value.
+    socrataJSON('5dqz-y4ea', {
+      '$select': 'disease, max(date) as last_estimated',
+      '$where': 'median IS NOT NULL',
+      '$group': 'disease'
+    })
+  ]);
+
+  const estDate = isoDay(dateRows?.[0]?.latest_date) || asOf;
+  const rows = await socrataJSON('5dqz-y4ea', {
+    '$select': 'disease,state,median,lower,upper,interval_width,p_growing,category',
+    '$where': `as_of='${asOf}T00:00:00.000' AND date='${estDate}T00:00:00.000'`,
+    '$limit': '500'
+  });
+
+  const lastByDisease = {};
+  (lastEstimated || []).forEach(r => { lastByDisease[r.disease] = isoDay(r.last_estimated); });
+
+  return { asOf, estDate, rows, lastByDisease };
+}
+
+// ════════════════════════════════════════════════════════
+//  FETCH 3: FEATURED OUTBREAK (case line list, all countries)
 // ════════════════════════════════════════════════════════
 // The Global.health feed is a record-per-case line list covering every affected
 // country in one file, so aggregation here counts and groups records rather than
@@ -1223,7 +1676,7 @@ function dataFreshness(latestDate, windowDays) {
 }
 
 // ════════════════════════════════════════════════════════
-//  FETCH 3: WHO DON
+//  FETCH 4: WHO DON
 // ════════════════════════════════════════════════════════
 async function fetchWHO() {
   // The WHO OData API returns records in ascending publication-date order by
@@ -1460,6 +1913,498 @@ function renderCDC(cdcData) {
 
   $('cdcSection').innerHTML = '';
   $('cdcSection').appendChild(grid);
+}
+
+
+// ════════════════════════════════════════════════════════
+//  PROCESS: RESPIRATORY SURVEILLANCE
+// ════════════════════════════════════════════════════════
+// Joins the three feeds into one per-pathogen, per-state view. Each feed is
+// optional: a failed fetch leaves its columns null rather than blanking the
+// section, so one dead feed never takes the other two down with it.
+function processResp(edRes, hospRes, rtRes) {
+  const ed   = edRes.status  === 'fulfilled' ? edRes.value  : null;
+  const hosp = hospRes.status === 'fulfilled' ? hospRes.value : null;
+  const rt   = rtRes.status  === 'fulfilled' ? rtRes.value  : null;
+
+  const errors = {
+    ed:   edRes.status   === 'rejected' ? String(edRes.reason?.message   || edRes.reason)   : null,
+    hosp: hospRes.status === 'rejected' ? String(hospRes.reason?.message || hospRes.reason) : null,
+    rt:   rtRes.status   === 'rejected' ? String(rtRes.reason?.message   || rtRes.reason)   : null
+  };
+
+  // ── ED: split the national row off from the state rows ──
+  const edStates = {};
+  let edNational = null;
+  (ed?.rows || []).forEach(r => {
+    if (r.trend_source === 'United States') edNational = r;
+    else if (r.trend_source === 'State') edStates[r.geography] = r;
+  });
+
+  // ── NHSN: keep real jurisdictions, drop the national and HHS-region rollups ──
+  const hospByAbbr = {};
+  let hospNational = null;
+  (hosp?.rows || []).forEach(r => {
+    const j = String(r.jurisdiction || '').trim();
+    if (j === 'USA') hospNational = r;
+    else if (/^Region\s/i.test(j)) return;   // HHS rollups double-count states
+    else hospByAbbr[j] = r;
+  });
+
+  // ── Rt: index by disease then state ──
+  const rtByDisease = {};
+  (rt?.rows || []).forEach(r => {
+    (rtByDisease[r.disease] = rtByDisease[r.disease] || {})[r.state] = r;
+  });
+
+  // The state roster comes from the ED feed (51 jurisdictions) so the table is a
+  // consistent set. NHSN additionally covers five territories; they are not shown
+  // because neither of the other two feeds carries them, which would leave a row
+  // with one column filled and two permanently blank.
+  const roster = Object.keys(edStates).sort();
+
+  const today = new Date();
+  const todayISO = today.toISOString().slice(0, 10);
+  const month = today.getMonth() + 1;
+
+  const edFresh   = ed   ? dataFreshness(ed.weekEnd, RESP_FRESHNESS_WINDOW_DAYS)   : null;
+  const hospFresh = hosp ? dataFreshness(hosp.weekEnd, RESP_FRESHNESS_WINDOW_DAYS) : null;
+  const rtFresh   = rt   ? dataFreshness(rt.asOf, RESP_FRESHNESS_WINDOW_DAYS)      : null;
+
+  // Shared y-scale for the trajectory sparklines. Scaling each pathogen to its own
+  // max would turn a flat 0.02% RSV summer into a dramatic-looking mountain range;
+  // one scale across all three keeps the comparison honest and is the whole point
+  // of putting them side by side.
+  const histByGeo = { Minnesota: [], 'United States': [] };
+  (ed?.history || []).forEach(r => {
+    const g = r.geography;
+    if (histByGeo[g]) histByGeo[g].push(r);
+  });
+  let sparkMax = 0;
+  Object.values(histByGeo).forEach(series => series.forEach(r => {
+    RESP_PATHOGENS.forEach(p => {
+      const v = numOrNull(r[p.edPct]);
+      if (v !== null && v > sparkMax) sparkMax = v;
+    });
+  }));
+
+  const pathogens = RESP_PATHOGENS.map(p => {
+    const rtStates = rtByDisease[p.rtDisease] || {};
+    const lastEstimated = rt?.lastByDisease?.[p.rtDisease] || null;
+
+    // Is this pathogen carrying any real estimate in the current vintage?
+    const estimatedNow = Object.values(rtStates).some(r => numOrNull(r.median) !== null);
+
+    const rtStatus = respRtStatus({
+      pathogen: p, rt, rtFresh, estimatedNow, lastEstimated, month
+    });
+
+    const states = roster.map(name => {
+      const e = edStates[name];
+      const h = hospByAbbr[STATE_ABBR[name]] || null;
+      const rr = rtStates[name];
+      return {
+        name,
+        isMn: isMinnesota(name),
+        edPct: e ? numOrNull(e[p.edPct]) : null,
+        edTrend: e ? (e[p.edTrend] || null) : null,
+        hospRate: h ? numOrNull(h[p.hospRate]) : null,
+        // "Not estimated" (the model declined for this state) is a different
+        // statement from "no data" (the state is absent from the feed), so the
+        // presence of the row is tracked separately from the value.
+        rtPresent: !!rr,
+        rtMedian: rr ? numOrNull(rr.median) : null,
+        rtCategory: rr ? (rr.category || null) : null
+      };
+    });
+
+    const mn = states.find(s => s.isMn) || null;
+    const mnRt = rtStates['Minnesota'] || null;
+
+    // National direction roll-up. A count of jurisdictions by modeled trend, which
+    // is a statement about direction across places, never about case volume.
+    const growing = Object.values(rtStates)
+      .filter(r => /growing/i.test(r.category || '')).length;
+    const estimatedStates = Object.values(rtStates)
+      .filter(r => numOrNull(r.median) !== null).length;
+
+    return {
+      ...p,
+      // Burden, observed
+      edMn: mn ? mn.edPct : null,
+      edUs: edNational ? numOrNull(edNational[p.edPct]) : null,
+      edTrendMn: mn ? mn.edTrend : null,
+      edTrendUs: edNational ? (edNational[p.edTrend] || null) : null,
+      // Severity, observed
+      hospMn: hospByAbbr['MN'] ? numOrNull(hospByAbbr['MN'][p.hospRate]) : null,
+      hospUs: hospNational ? numOrNull(hospNational[p.hospRate]) : null,
+      hospBedsMn: hospByAbbr['MN'] ? numOrNull(hospByAbbr['MN'][p.hospBeds]) : null,
+      hospBedsUs: hospNational ? numOrNull(hospNational[p.hospBeds]) : null,
+      hospChgMn: hospByAbbr['MN'] ? numOrNull(hospByAbbr['MN'][p.hospChg]) : null,
+      hospChgUs: hospNational ? numOrNull(hospNational[p.hospChg]) : null,
+      // Direction, modeled
+      rtStatus,
+      rtMnPresent: !!mnRt,
+      rtMn: mnRt ? numOrNull(mnRt.median) : null,
+      rtMnLower: mnRt ? numOrNull(mnRt.lower) : null,
+      rtMnUpper: mnRt ? numOrNull(mnRt.upper) : null,
+      rtMnInterval: mnRt ? numOrNull(mnRt.interval_width) : null,
+      rtMnP: mnRt ? numOrNull(mnRt.p_growing) : null,
+      rtMnCategory: mnRt ? (mnRt.category || null) : null,
+      rtGrowingStates: growing,
+      rtEstimatedStates: estimatedStates,
+      lastEstimated,
+      // Sparkline series on the shared scale.
+      histMn: (histByGeo['Minnesota'] || []).map(r => numOrNull(r[p.edPct])),
+      histUs: (histByGeo['United States'] || []).map(r => numOrNull(r[p.edPct])),
+      states
+    };
+  });
+
+  return {
+    pathogens, errors, todayISO,
+    edWeekEnd: ed?.weekEnd || null,
+    hospWeekEnd: hosp?.weekEnd || null,
+    rtAsOf: rt?.asOf || null,
+    rtEstDate: rt?.estDate || null,
+    edFresh, hospFresh, rtFresh,
+    sparkMax,
+    histWeeks: (histByGeo['Minnesota'] || []).map(r => isoDay(r.week_end)),
+    stateCount: roster.length,
+    hospJurisdictions: Object.keys(hospByAbbr).length
+  };
+}
+
+// Decide how a pathogen's Rt should be presented. The distinction this exists to
+// protect: a feed that has stopped publishing is a real problem, while a feed that
+// is publishing "Not Estimated" for flu and RSV in August is doing exactly what it
+// does every summer. Conflating them fires a false alarm a third of every year.
+function respRtStatus({ pathogen, rt, rtFresh, estimatedNow, lastEstimated, month }) {
+  if (!rt) return { kind: 'error' };
+
+  // Feed-level staleness first. This is the only condition that is genuinely a
+  // broken feed, and it is judged on whether new vintages are arriving, never on
+  // whether a given pathogen currently has values.
+  if (rtFresh && !rtFresh.live) {
+    return { kind: 'stale', days: rtFresh.days, lastEstimated };
+  }
+
+  if (estimatedNow) return { kind: 'active', lastEstimated };
+
+  // Feed is publishing but this pathogen carries no estimate.
+  if (pathogen.seasonalRt) {
+    const inSeason = RT_SEASON_MONTHS.includes(month);
+    const inCoreSeason = RT_CORE_SEASON_MONTHS.includes(month);
+    // Deep winter is when a seasonal pathogen ought to be running, so silence
+    // there is worth flagging. September, October and May are shoulder months
+    // where the season has not started or has just ended, and a pause is normal.
+    if (inCoreSeason) return { kind: 'paused-unexpected', lastEstimated, inSeason };
+    return { kind: 'paused-seasonal', lastEstimated, inSeason };
+  }
+
+  // A year-round pathogen going unestimated while the feed publishes is never
+  // expected, so it never gets the calm seasonal treatment.
+  return { kind: 'paused-unexpected', lastEstimated, inSeason: true };
+}
+
+// ════════════════════════════════════════════════════════
+//  RENDER: RESPIRATORY SURVEILLANCE
+// ════════════════════════════════════════════════════════
+// Percentages and rates, so absent renders as a dash, never as 0.
+const respPct  = v => v === null ? null : v.toFixed(2) + '%';
+const respRate = v => v === null ? null : v.toFixed(2);
+const respRt   = v => v === null ? null : v.toFixed(2);
+const respCell = (v, cls) =>
+  v === null ? `<span class="rv rv-none${cls ? ' ' + cls : ''}">no data</span>`
+             : `<span class="rv${cls ? ' ' + cls : ''}">${v}</span>`;
+
+// The ED feed's own trend vocabulary. "Sparse", "Limited Data", "Data Unavailable"
+// and "No Data" are reporting states, not directions, so they must not be dressed
+// up as a trend.
+function respTrendChip(t) {
+  if (!t) return '';
+  const v = String(t).trim();
+  if (/^increasing$/i.test(v)) return '<span class="resp-trend-badge trend-up">▲ Increasing</span>';
+  if (/^decreasing$/i.test(v)) return '<span class="resp-trend-badge trend-down">▼ Decreasing</span>';
+  if (/^no change$/i.test(v))  return '<span class="resp-trend-badge trend-stable">● No change</span>';
+  return `<span class="resp-trend-badge trend-stable">${esc(v)}</span>`;
+}
+
+// Week-over-week change on admissions. NHSN reports -100 when a jurisdiction goes
+// from some admissions to none, which is true but reads oddly at these volumes, so
+// it is shown as text rather than a percentage.
+function respChg(v) {
+  if (v === null) return '<span class="rv rv-none">no data</span>';
+  if (v <= -100) return '<span class="rv">to zero</span>';
+  const s = (v > 0 ? '+' : '') + v.toFixed(0) + '%';
+  return `<span class="rv">${s}</span>`;
+}
+
+// 12-week trajectory on a scale shared by all three pathogens.
+function respSparkline(mn, us, max, weeks) {
+  const pts = mn.filter(v => v !== null);
+  if (pts.length < 2) return '';
+  const W = 100, H = 26, top = max > 0 ? max : 1;
+  const xy = series => series.map((v, i) => {
+    if (v === null) return null;
+    const x = (i / Math.max(1, series.length - 1)) * W;
+    const y = H - (v / top) * H;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).filter(Boolean).join(' ');
+
+  const mnPts = xy(mn), usPts = xy(us);
+  const first = weeks[0] ? fmtDate(weeks[0]) : '';
+  const last = weeks[weeks.length - 1] ? fmtDate(weeks[weeks.length - 1]) : '';
+  return `<div class="resp-spark">
+      <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img"
+           aria-label="Minnesota emergency department visit share over the last ${mn.length} weeks">
+        <polyline points="${usPts}" fill="none" stroke="#B9AF9D" stroke-width="1.2"
+                  vector-effect="non-scaling-stroke" stroke-linejoin="round"/>
+        <polyline points="${mnPts}" fill="none" stroke="#4A6B3A" stroke-width="1.8"
+                  vector-effect="non-scaling-stroke" stroke-linejoin="round"/>
+      </svg>
+      <div class="resp-spark-cap">${esc(first)} → ${esc(last)} · MN solid, US grey · scale 0 to ${top.toFixed(2)}% shared by all three</div>
+    </div>`;
+}
+
+// The modeled block. Rt never appears without the observed burden above it, and
+// never without the sentence saying it is direction only.
+function respRtBlock(p) {
+  const st = p.rtStatus;
+  const methodSeam = p.lastEstimated && p.lastEstimated < RT_METHOD_CHANGE_DATE;
+  const seamNote = methodSeam
+    ? ` Those estimates predate the <strong>${fmtDate(RT_METHOD_CHANGE_DATE)}</strong> change in modelling method (EpiNow2 to a hierarchical GAM), so they are not directly comparable to current-method values.`
+    : '';
+
+  let body;
+
+  if (st.kind === 'error') {
+    body = `<div class="resp-state-note resp-state-none">
+        <span><strong>Modelled direction unavailable.</strong>
+        The Rt feed could not be read, so no direction is shown. Observed burden above is unaffected.</span>
+      </div>`;
+  } else if (st.kind === 'stale') {
+    body = `<div class="resp-state-note resp-state-unexpected">
+        <span><strong>Rt feed appears stale.</strong>
+        No new modelling run in <strong>${st.days} days</strong> (window is ${RESP_FRESHNESS_WINDOW_DAYS}).
+        This is a feed problem, not a seasonal pause.${seamNote}</span>
+      </div>`;
+  } else if (st.kind === 'paused-seasonal') {
+    body = `<div class="resp-state-note resp-state-paused">
+        <span><strong>Off-season, not currently estimated.</strong>
+        The feed is publishing normally and reporting ${esc(p.label)} as <em>Not Estimated</em> for every state, which is the expected annual pause.
+        Estimation runs roughly September through May; last estimate <strong>${st.lastEstimated ? fmtDate(st.lastEstimated) : 'unknown'}</strong>, and it resumes with the coming season.${seamNote}</span>
+      </div>`;
+  } else if (st.kind === 'paused-unexpected') {
+    body = `<div class="resp-state-note resp-state-unexpected">
+        <span><strong>Not currently estimated, and this is not the usual seasonal pause.</strong>
+        The feed is publishing but reports ${esc(p.label)} as <em>Not Estimated</em> for every state at a point in the year when estimates would normally be running.
+        Last estimate <strong>${st.lastEstimated ? fmtDate(st.lastEstimated) : 'unknown'}</strong>.${seamNote}</span>
+      </div>`;
+  } else if (!p.rtMnPresent) {
+    // Minnesota missing from the feed entirely: no data, distinct from declined.
+    body = `<div class="resp-state-note resp-state-none">
+        <span><strong>No Minnesota row in this modelling run.</strong>
+        Other states are estimated; Minnesota is absent from the feed, which is not the same as the model declining to estimate it.</span>
+      </div>`;
+  } else if (p.rtMn === null) {
+    // Row present, value withheld. This is the model declining, and it says so.
+    body = `<div class="resp-state-note resp-state-none">
+        <span><strong>Not estimated for Minnesota.</strong>
+        The row is published but carries no value${p.rtMnCategory ? ` (<em>${esc(p.rtMnCategory)}</em>)` : ''}.
+        Rt is withheld for a state when ED visit volume is too low, an anomaly is detected, or the model fails its reliability checks.
+        That is different from no data.
+        ${p.rtEstimatedStates} of ${p.states.length} jurisdictions are estimated this run.</span>
+      </div>`;
+  } else {
+    const ci = (p.rtMnLower !== null && p.rtMnUpper !== null)
+      ? `${respRt(p.rtMnLower)} – ${respRt(p.rtMnUpper)}` : null;
+    const iv = p.rtMnInterval !== null ? Math.round(p.rtMnInterval * 100) + '%' : '';
+    body = `
+      <div class="resp-rt-headline">
+        <span class="resp-rt-num">${respRt(p.rtMn)}</span>
+        ${ci ? `<span class="resp-rt-ci">${iv} interval ${ci}</span>` : ''}
+      </div>
+      <div class="resp-rt-meta">
+        Minnesota · <strong>${esc(p.rtMnCategory || 'category not given')}</strong>${
+          p.rtMnP !== null ? ` · ${Math.round(p.rtMnP * 100)}% probability of growth` : ''}
+      </div>
+      <div class="resp-rt-meta">
+        ${p.rtGrowingStates} of ${p.rtEstimatedStates} estimated jurisdictions modelled as growing
+      </div>`;
+  }
+
+  const caveat = `<div class="resp-rt-caveat">
+      <strong>Direction only.</strong> Rt is the estimated number of onward infections per case.
+      Below 1 means transmission is shrinking; it does <em>not</em> mean activity is low.
+      Read it against the observed burden above, which is the only thing here that says how much illness there is.
+      Modelled from the same NSSP emergency department data as the burden figures, so it is a different reading of one source, not an independent confirmation.
+    </div>`;
+
+  return `<div class="resp-block resp-block-modeled">
+      <div class="resp-block-label">Direction <span class="resp-tag resp-tag-mod">modelled estimate</span></div>
+      ${body}
+      ${caveat}
+    </div>`;
+}
+
+function renderResp(data) {
+  const target = $('respSection');
+  const { pathogens, errors } = data;
+
+  // Every feed down: one error block, and nothing pretending to be data.
+  if (errors.ed && errors.hosp && errors.rt) {
+    target.innerHTML = `<div class="error-block">⚠ All three respiratory surveillance feeds failed. ` +
+      `NSSP: ${esc(errors.ed)}. NHSN: ${esc(errors.hosp)}. Rt: ${esc(errors.rt)}.</div>`;
+    if ($('respNote')) $('respNote').textContent = '';
+    return;
+  }
+
+  // ── Per-feed freshness. Three separate indicators, because a seasonal pause in
+  //    one is not a problem in the others. ──
+  const feedChip = (name, label, fresh, weekLabel, err) => {
+    if (err) {
+      return `<div class="resp-feed freshness-stale">
+          <span class="freshness-dot stale"></span>
+          <span><span class="resp-feed-name">${esc(name)}</span><strong>Unavailable.</strong> ${esc(err)}</span>
+        </div>`;
+    }
+    if (!fresh) return '';
+    const age = fresh.days === null ? 'unknown'
+      : fresh.days === 0 ? 'today'
+      : fresh.days + ' day' + (fresh.days === 1 ? '' : 's') + ' ago';
+    return fresh.live
+      ? `<div class="resp-feed freshness-live">
+           <span class="freshness-dot live"></span>
+           <span><span class="resp-feed-name">${esc(name)}</span><strong>Live.</strong> ${esc(label)} ${fmtDate(weekLabel)} (${age}).</span>
+         </div>`
+      : `<div class="resp-feed freshness-stale">
+           <span class="freshness-dot stale"></span>
+           <span><span class="resp-feed-name">${esc(name)}</span><strong>Stale.</strong> ${esc(label)} ${fmtDate(weekLabel)}, ${fresh.days} days ago (window ${RESP_FRESHNESS_WINDOW_DAYS}).</span>
+         </div>`;
+  };
+
+  const feeds = `<div class="resp-feeds">
+      ${feedChip('NSSP · ED visits', 'Week ending', data.edFresh, data.edWeekEnd, errors.ed)}
+      ${feedChip('NHSN · hospital', 'Week ending', data.hospFresh, data.hospWeekEnd, errors.hosp)}
+      ${feedChip('CFA · modelled Rt', 'Run of', data.rtFresh, data.rtAsOf, errors.rt)}
+    </div>`;
+
+  const explainer = `<div class="resp-explainer">
+      <strong>These are not case counts, and no US case count exists for them.</strong>
+      National COVID-19 case reporting ended in May 2023 and COVID-19 left the notifiable-disease
+      list in July 2024, so nothing above or below is a tally of infections. What is shown instead is
+      how much of emergency department and hospital activity these three viruses account for
+      (<em>observed</em>), and which way transmission is estimated to be moving (<em>modelled</em>).
+      Minnesota is shown against the national figure for every metric.
+    </div>`;
+
+  const cards = pathogens.map((p, i) => {
+    const trend = respTrendChip(p.edTrendMn);
+
+    const edBlock = errors.ed
+      ? `<div class="resp-block resp-block-observed">
+           <div class="resp-block-label">Burden <span class="resp-tag resp-tag-obs">observed</span></div>
+           <div class="resp-state-note resp-state-none"><span>Emergency department burden unavailable: ${esc(errors.ed)}</span></div>
+         </div>`
+      : `<div class="resp-block resp-block-observed">
+          <div class="resp-block-label">Burden <span class="resp-tag resp-tag-obs">observed</span></div>
+          <div class="resp-table">
+            <span></span><span class="rh">MN</span><span class="rh">US</span>
+            <span class="rl">Emergency dept visits<small>share of all ED visits</small></span>
+            ${respCell(respPct(p.edMn), 'mn')}${respCell(respPct(p.edUs))}
+          </div>
+          ${respSparkline(p.histMn, p.histUs, data.sparkMax, data.histWeeks)}
+        </div>`;
+
+    const hospBlock = errors.hosp
+      ? `<div class="resp-block resp-block-observed">
+           <div class="resp-block-label">Severity <span class="resp-tag resp-tag-obs">observed</span></div>
+           <div class="resp-state-note resp-state-none"><span>Hospital admissions unavailable: ${esc(errors.hosp)}</span></div>
+         </div>`
+      : `<div class="resp-block resp-block-observed">
+          <div class="resp-block-label">Severity <span class="resp-tag resp-tag-obs">observed</span></div>
+          <div class="resp-table">
+            <span></span><span class="rh">MN</span><span class="rh">US</span>
+            <span class="rl">New admissions<small>per 100k residents</small></span>
+            ${respCell(respRate(p.hospMn), 'mn')}${respCell(respRate(p.hospUs))}
+            <span class="rl">Inpatient beds<small>% occupied by this virus</small></span>
+            ${respCell(respPct(p.hospBedsMn), 'mn')}${respCell(respPct(p.hospBedsUs))}
+            <span class="rl">Week over week<small>change in admissions</small></span>
+            ${respChg(p.hospChgMn)}${respChg(p.hospChgUs)}
+          </div>
+        </div>`;
+
+    // State table. Minnesota pinned to the top and highlighted, per the same
+    // convention as the NNDSS breakdown, and shown even when it has no value.
+    const mnState = p.states.find(s => s.isMn);
+    const others = p.states.filter(s => !s.isMn);
+    const ordered = mnState ? [mnState, ...others] : others;
+    const stateRows = ordered.map(s => {
+      // Row present but no value = the model declined. Row absent = no data.
+      const rtTxt = !s.rtPresent ? '<span class="rv-none">no data</span>'
+        : s.rtMedian === null ? '<span class="rv-none">not est.</span>'
+        : respRt(s.rtMedian);
+      const edTxt = s.edPct === null ? '<span class="rv-none">no data</span>' : respPct(s.edPct);
+      const hoTxt = s.hospRate === null ? '<span class="rv-none">no data</span>' : respRate(s.hospRate);
+      return `<tr${s.isMn ? ' class="mn-row"' : ''}>
+        <td>${s.isMn ? '📍 ' : ''}${esc(s.name)}${s.isMn ? ' <span class="mn-badge">MN</span>' : ''}</td>
+        <td>${edTxt}</td><td>${hoTxt}</td><td>${rtTxt}</td></tr>`;
+    }).join('');
+
+    return `<div class="resp-card">
+        <div class="resp-card-header">
+          <span class="resp-name">${esc(p.label)}<span class="resp-subname">${esc(p.sub)}</span></span>
+          ${trend}
+        </div>
+        ${edBlock}
+        ${hospBlock}
+        ${respRtBlock(p)}
+        <div class="resp-card-footer">
+          <button class="resp-expand" type="button" id="respBtn-${p.key}" aria-expanded="false" aria-controls="respStates-${p.key}">
+            <span class="resp-expand-caret">▼</span> all ${p.states.length} jurisdictions
+          </button>
+          <div class="resp-states" id="respStates-${p.key}">
+            <div class="resp-states-wrap">
+              <table class="state-table">
+                <thead><tr><th>State / Area</th><th>ED&nbsp;%</th><th>Adm&nbsp;/100k</th><th>Rt</th></tr></thead>
+                <tbody>${stateRows}</tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+
+  target.innerHTML = feeds + explainer + `<div class="resp-grid">${cards}</div>`;
+
+  pathogens.forEach(p => {
+    const btn = $(`respBtn-${p.key}`);
+    const panel = $(`respStates-${p.key}`);
+    if (!btn || !panel) return;
+    btn.addEventListener('click', () => {
+      const open = panel.classList.toggle('open');
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      btn.innerHTML = (open ? '<span class="resp-expand-caret">▲</span> hide'
+                            : `<span class="resp-expand-caret">▼</span> all ${p.states.length} jurisdictions`);
+    });
+  });
+
+  // Diagnostic line, same idea as .cdc-note: what was actually read, so the state
+  // of the section is legible without opening the console.
+  const note = $('respNote');
+  if (note) {
+    const bits = [];
+    if (data.edWeekEnd)   bits.push(`ED visits week ending ${fmtDate(data.edWeekEnd)}`);
+    if (data.hospWeekEnd) bits.push(`hospital week ending ${fmtDate(data.hospWeekEnd)}`);
+    if (data.rtAsOf)      bits.push(`Rt run ${fmtDate(data.rtAsOf)}`);
+    bits.push(`${data.stateCount} jurisdictions`);
+    const est = pathogens.filter(p => p.rtStatus.kind === 'active').map(p => p.label);
+    bits.push(est.length
+      ? `direction modelled for ${est.join(' and ')}`
+      : 'no pathogen currently modelled for direction');
+    note.textContent = bits.join(' · ');
+  }
 }
 
 // ════════════════════════════════════════════════════════
@@ -1705,16 +2650,21 @@ async function initDashboard() {
 
   // Reset sections to loading state
   $('cdcSection').innerHTML = '<div class="loading-block"><div class="spinner"></div>Loading CDC NNDSS data…</div>';
+  $('respSection').innerHTML = '<div class="loading-block"><div class="spinner"></div>Loading respiratory surveillance…</div>';
   $('globalSection').innerHTML = '<div class="loading-block"><div class="spinner"></div>Loading outbreak linelist…</div>';
   $('whoSection').innerHTML = '<div class="loading-block"><div class="spinner"></div>Loading WHO alerts…</div>';
 
   // Fetch all in parallel
   const cdcPromise = fetchCDC();
+  // The three respiratory feeds are settled independently of each other so a
+  // failure in any one leaves the other two rendering normally.
+  const respPromise = Promise.allSettled([fetchRespED(), fetchRespHosp(), fetchRespRt()]);
   const outbreakPromises = FEATURED_OUTBREAKS.map(cfg => fetchOutbreak(cfg));
   const whoPromise = fetchWHO();
 
-  const [cdcResult, ...outbreakResults] = await Promise.allSettled([
+  const [cdcResult, respResult, ...outbreakResults] = await Promise.allSettled([
     cdcPromise,
+    respPromise,
     ...outbreakPromises,
     whoPromise
   ]);
@@ -1733,6 +2683,19 @@ async function initDashboard() {
     $('sumTrendingUp').textContent = '—';
     $('sumUsCases').textContent = '—';
     if ($('cdcNote')) $('cdcNote').textContent = '';
+  }
+
+  // Render Respiratory
+  try {
+    const [edRes, hospRes, rtRes] = respResult.status === 'fulfilled'
+      ? respResult.value
+      : [{ status: 'rejected', reason: respResult.reason },
+         { status: 'rejected', reason: respResult.reason },
+         { status: 'rejected', reason: respResult.reason }];
+    renderResp(processResp(edRes, hospRes, rtRes));
+  } catch (err) {
+    $('respSection').innerHTML = `<div class="error-block">⚠ Respiratory surveillance unavailable: ${esc(err.message)}</div>`;
+    if ($('respNote')) $('respNote').textContent = '';
   }
 
   // Render Global
