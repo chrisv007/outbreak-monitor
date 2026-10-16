@@ -986,7 +986,7 @@ footer a { color: var(--text-secondary); }
     <a href="https://github.com/globaldothealth/outbreak-data/tree/main/Ebola%20BVD" target="_blank">Global.health Ebola BVD 2026 line list</a> (CC BY 4.0) ·
     <a href="https://www.who.int/emergencies/disease-outbreak-news" target="_blank">WHO DON</a> ·
     For situational awareness only — not a clinical resource.
-    <div class="build-timestamp">Dashboard page last modified: 2026-08-28 02:12 PM CDT</div>
+    <div class="build-timestamp">Dashboard page last modified: 2026-10-16 09:02 AM CDT</div>
   </div>
 </footer>
 
@@ -1181,8 +1181,13 @@ const normISODate = v => {
 };
 const fmtDate = iso => {
   if (!iso) return '';
-  try { return new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }); }
-  catch { return iso.slice(0, 10); }
+  const s = String(iso).trim();
+  // A bare YYYY-MM-DD is parsed by Date as midnight UTC, which every US time zone
+  // then displays as the previous day (a Sep 29 Rt run showed as "Sep 28"). Read
+  // date-only values as local midnight instead. Full timestamps are unchanged.
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(s + 'T00:00:00') : new Date(s);
+  if (isNaN(d)) return s.slice(0, 10);
+  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 };
 const now = () => new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 
@@ -1474,7 +1479,11 @@ const isoDay = v => {
 async function socrataJSON(datasetId, params) {
   const url = `https://data.cdc.gov/resource/${datasetId}.json?` +
     new URLSearchParams(params).toString();
-  const r = await fetch(url);
+  // data.cdc.gov sends Last-Modified but no Cache-Control, which lets a browser
+  // reuse an old response under heuristic caching. An old max(as_of) or
+  // max(week_end) answer would show a past week and could trip a false STALE
+  // banner, so always go back to the server for these small queries.
+  const r = await fetch(url, { cache: 'no-cache' });
   if (!r.ok) throw new Error(`data.cdc.gov/${datasetId} returned ${r.status}`);
   return r.json();
 }
