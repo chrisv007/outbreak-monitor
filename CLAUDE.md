@@ -322,6 +322,19 @@ the others. Each compares the feed's own latest date against the viewer's clock 
 Feed staleness outranks everything, including an active estimate. A year-round pathogen never
 receives the calm seasonal treatment.
 
+**Publication cadence (checked 2026-10-16):** the Rt `as_of` is a Monday and the vintage lands
+on `data.cdc.gov` the following Friday around 16:00 UTC (the 2026-10-06 run appeared
+2026-10-09). A healthy feed therefore reads 3 to 11 days old, which the 14-day window covers
+with slack; a red Rt chip means a week was genuinely missed or the browser got an old answer.
+
+**Two display traps fixed after a false "Stale. Run of Sep 28, 17 days ago" report:**
+- `data.cdc.gov` sends `Last-Modified` but no `Cache-Control`, so browsers may heuristically
+  cache query responses. The user's page received the Sep 29 vintage a week after the Oct 6 one
+  was live. `socrataJSON()` now fetches with `cache: 'no-cache'`. Do not remove it.
+- `new Date('2026-09-29')` is midnight UTC, which US time zones render as the previous day.
+  `fmtDate()` reads bare `YYYY-MM-DD` values as local midnight. Every feed date shown on the
+  page is a bare date, so this matters everywhere, not just in this section.
+
 **Verification:** every field name and every query above returned live HTTP 200 rows from
 `data.cdc.gov` before any code was written. Rendering and decision logic were then checked in
 headless Chromium at 320, 390, 430 and 1200px against live payloads, plus forced scenarios:
