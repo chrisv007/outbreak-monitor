@@ -269,6 +269,15 @@ main { padding: 24px 0 48px; }
   display: block;
 }
 
+/* Why this card is on the panel, in one sentence. */
+.disease-reason {
+  padding: 8px 16px 0;
+  border-top: 1px solid var(--card-border);
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+
 .pct-change {
   font-size: 0.72rem;
   padding: 2px 6px;
@@ -661,18 +670,78 @@ main { padding: 24px 0 48px; }
 .resp-table .rv.mn { color: #3F5C33; }
 .resp-table .rv-none { color: var(--text-muted); font-size: 0.7rem; font-weight: 400; }
 
-/* 12-week trajectory. Shared y-scale across all three pathogens so a near-zero
-   summer series renders as the flat line it actually is, instead of being
-   auto-scaled into a dramatic-looking climb. */
-.resp-spark { margin-top: 8px; }
-.resp-spark svg { display: block; width: 100%; height: 26px; overflow: visible; }
-.resp-spark-cap {
+/* Weekly ED-visit trend chart. Shared y-scale across all three pathogens so a
+   near-zero series renders as the flat line it actually is, instead of being
+   auto-scaled into a dramatic-looking climb. Axis, legend, a plain-language
+   summary and a weekly table make it readable without decoding. */
+.resp-chart-wrap { margin-top: 12px; }
+.resp-chart-title { font-size: 0.74rem; font-weight: 600; color: var(--text-primary); }
+.resp-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 0.68rem;
+  color: var(--text-secondary);
+  margin: 3px 0 2px;
+}
+.resp-chart-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.resp-key { display: inline-block; width: 14px; height: 2px; border-radius: 1px; flex-shrink: 0; }
+.resp-chart { position: relative; height: 132px; touch-action: pan-y; outline-offset: 2px; }
+.resp-chart:focus-visible { outline: 2px solid var(--accent); border-radius: 4px; }
+.resp-chart svg { display: block; overflow: visible; }
+.resp-chart .rc-grid { stroke: var(--card-border); stroke-width: 1; }
+.resp-chart .rc-ytick,
+.resp-chart .rc-xtick {
   font-family: 'JetBrains Mono', monospace;
-  font-size: 0.55rem;
+  font-size: 10px;
+  fill: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.resp-chart .rc-ytick { text-anchor: end; }
+.resp-chart .rc-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.resp-chart .rc-ring { stroke: var(--card-bg); stroke-width: 2; }
+.resp-chart .rc-cross { stroke: var(--text-muted); stroke-width: 1; }
+.rc-tip {
+  position: absolute;
+  top: 2px;
+  pointer-events: none;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 6px;
+  box-shadow: var(--shadow);
+  padding: 6px 8px;
+  font-size: 0.66rem;
+  line-height: 1.45;
+  white-space: nowrap;
+  z-index: 2;
+}
+.rc-tip-head { color: var(--text-muted); margin-bottom: 2px; }
+.rc-tip-row { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); }
+.rc-tip-row strong {
+  color: var(--text-primary);
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  min-width: 3.6em;
+}
+.resp-chart-summary {
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: var(--text-secondary);
+  margin-top: 6px;
+}
+.resp-chart-summary strong { color: var(--text-primary); font-weight: 600; }
+.resp-chart-note { font-size: 0.64rem; line-height: 1.4; color: var(--text-muted); margin-top: 4px; }
+.resp-chart-table { margin-top: 6px; }
+.resp-chart-table > summary {
+  cursor: pointer;
+  font-size: 0.66rem;
   color: var(--text-muted);
   letter-spacing: 0.03em;
-  margin-top: 2px;
 }
+.resp-chart-table > summary:hover { color: var(--accent); }
+.resp-chart-table .state-table { margin-top: 6px; }
+.resp-chart-table .state-table td { white-space: nowrap; }
 
 .resp-rt-headline {
   display: flex;
@@ -932,7 +1001,7 @@ footer a { color: var(--text-secondary); }
     <div class="section">
       <div class="section-header">
         <span class="section-title">🇺🇸 US Outbreak Surveillance</span>
-        <span class="section-desc">CDC NNDSS · conditions running above last year, plus active or rising high-consequence pathogens · auto-flagged · click a card to expand state breakdown</span>
+        <span class="section-desc">CDC NNDSS · conditions clearly above last year at the same week, plus high-consequence pathogens with cases · auto-flagged · click a card to expand state breakdown</span>
       </div>
       <div class="cdc-note" id="cdcNote"></div>
       <div id="cdcSection">
@@ -986,7 +1055,7 @@ footer a { color: var(--text-secondary); }
     <a href="https://github.com/globaldothealth/outbreak-data/tree/main/Ebola%20BVD" target="_blank">Global.health Ebola BVD 2026 line list</a> (CC BY 4.0) ·
     <a href="https://www.who.int/emergencies/disease-outbreak-news" target="_blank">WHO DON</a> ·
     For situational awareness only — not a clinical resource.
-    <div class="build-timestamp">Dashboard page last modified: 2026-10-16 09:02 AM CDT</div>
+    <div class="build-timestamp">Dashboard page last modified: 2026-10-26 07:52 AM CDT</div>
   </div>
 </footer>
 
@@ -1064,38 +1133,39 @@ const FEATURED_OUTBREAKS = [
 // gets. That defeats the purpose of the panel.
 //
 // Instead we let the data decide. Every condition in the live feed is scored by
-// how elevated its year-to-date count is versus the same period last year, using
-// fields the feed already provides: m3 (YTD current year) and m4 (YTD previous
-// year). Both are plain counts that sum correctly across states (unlike the
-// 52-week max), so the comparison stays valid at the national aggregate level.
-// A condition surfaces when it is clearly running above last year; the steady
-// endemic background (year-over-year ratio near 1) falls away on its own, and
-// there are no names to maintain when the next outbreak appears.
+// how far its year-to-date count (m3) sits above the same point last year. A
+// condition surfaces when it is clearly running above last year; the steady
+// endemic background falls away on its own, and there are no names to maintain
+// when the next outbreak appears.
 //
-// "Clearly running above last year" takes two paths, because a single ratio bar
-// is magnitude-blind — it over-shows big proportional jumps off a tiny
-// base (12 -> 19 cases is +58%) while missing a condition climbing 15-19% that
-// is nonetheless carrying hundreds of excess cases, which is exactly the burden
-// public-health surveillance cares about:
-//   1. Strong surge   — YTD >= 1.2x last year (>=20% up), shown regardless of
-//                        volume so genuine low-base surges still appear.
-//   2. Sustained rise — YTD >= 1.10x last year (>=10% up) AND at least
-//                        SURFACE_MIN_EXCESS excess cases over last year, so a
-//                        high-burden condition running under the surge bar is
-//                        not dropped, while trivial small-base blips still are.
-// This band sits a full ten points below the surge floor on purpose: an earlier
-// version set it at 1.15, one sliver below the 1.2 surge bar, so path 2 could
-// only ever admit conditions in the tiny [1.15, 1.20) window that path 1 did not
-// already cover. That window is rarely populated, so the "absolute-burden" path
-// changed almost nothing on the live panel and any high-burden condition rising
-// by 10-15% was still dropped. Widening the floor to 1.10 gives the burden
-// signal a real band to act in. Flat endemic background (ratio < 1.10) fails
-// both paths and falls away on its own; ranking by excess and the card cap keep
-// the panel focused.
-const SURFACE_MIN_YTD = 5;          // ignore 1-4 case statistical noise
-const SURFACE_SURGE_RATIO = 1.2;    // path 1: >=20% above last year, any volume
-const SURFACE_SUSTAINED_RATIO = 1.10; // path 2: >=10% above last year ...
-const SURFACE_MIN_EXCESS = 50;      // ... if it also carries >=50 excess cases
+// BASELINE: last year's figure is taken from LAST YEAR'S OWN TABLE for the same
+// MMWR week (its m3, as first published), not from this year's m4 column. NNDSS
+// counts keep growing for about a year as late reports arrive, so m4 (last year,
+// fully revised) is roughly 20% higher than the same period looked when it was
+// first published (median 1.20 for 2025, 1.26 for 2024, measured on the live
+// feed). Comparing this year's still-incomplete count against that revised figure
+// pushed every condition about 18% toward "declining". In a backtest at weeks 12,
+// 25 and 41 of 2024 and 2025 it caught only 51% of the conditions that really did
+// end the period 10%+ above the prior year, and in Oct 2025 it showed West Nile as
+// down 7% in a season that finished up 54%. Comparing like with like (both years
+// as first published, so both carry the same reporting lag) caught 71% at the
+// same 85% precision.
+//
+// RULE: a condition surfaces when BOTH
+//   1. it is at least 20% above last year (SURFACE_SURGE_RATIO), and
+//   2. the rise is larger than normal chance variation: z = (now - last - 1) /
+//      sqrt(now + last) >= SURFACE_MIN_Z (one-sided 95%). That is the normal
+//      approximation to the exact test for two Poisson counts; it agreed with the
+//      exact test in all but 4 of 204,000 count pairs checked, all at p = 0.05.
+// The noise test replaces the old fixed 5-case floor and the old "sustained rise"
+// path (>=10% up with >=50 excess cases). It does both jobs on principle: a jump
+// from 9 to 14 cases is +56% but well inside chance and stays out, while a large
+// condition clears it easily. With a fair baseline the [1.10, 1.20) band turned
+// out to be mostly reporting-timing noise (6 real rises against 11 false alarms in
+// the backtest), so the 20% bar is the single effect-size gate. A condition with
+// no cases last year needs 5 to clear the noise test, the same floor as before.
+const SURFACE_SURGE_RATIO = 1.2;    // >=20% above last year at the same week ...
+const SURFACE_MIN_Z = 1.645;        // ... and beyond chance (one-sided 95%)
 const SURFACE_MAX_CARDS = 24;       // show at most this many, strongest first
 
 // ── High-consequence severity tier (near-zero-baseline pathogens) ──
@@ -1201,10 +1271,24 @@ function cleanLabel(label) {
     .trim();
 }
 
+// Key for matching a condition across years. Labels drift in spacing between
+// annual tables (2025 "SalmonellaParatyphi infection" is 2026 "Salmonella
+// Paratyphi infection"), so compare on lowercase letters and digits only.
+function labelKey(label) {
+  return cleanLabel(label).toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
 // A condition with no cases in the prior-year period is newly emergent: there is
 // no baseline to divide by, so it is judged on magnitude alone.
 function isEmergent(d) {
   return d.ytdPrevious <= 0 && d.ytdCurrent > 0;
+}
+
+// How far this year's count sits above last year's in units of chance variation
+// (see the RULE note above SURFACE_SURGE_RATIO). Negative when below last year.
+function riseZ(d) {
+  const n = d.ytdCurrent + Math.max(0, d.ytdPrevious);
+  return n > 0 ? (d.ytdCurrent - Math.max(0, d.ytdPrevious) - 1) / Math.sqrt(n) : 0;
 }
 
 // Excess cases over the same period last year — an interpretable measure of how
@@ -1244,12 +1328,9 @@ function isSurfaced(d) {
     return d.ytdCurrent >= HIGH_CONSEQUENCE_MIN_YTD &&
       (isEmergent(d) || d.currentWeek > 0 || d.ytdCurrent >= d.ytdPrevious);
   }
-  if (d.ytdCurrent < SURFACE_MIN_YTD) return false;   // below the noise floor
+  if (riseZ(d) < SURFACE_MIN_Z) return false;         // within normal chance variation
   if (isEmergent(d)) return true;                     // new / re-emergent this year
-  const ratio = d.ytdCurrent / d.ytdPrevious;
-  if (ratio >= SURFACE_SURGE_RATIO) return true;      // path 1: strong surge
-  // path 2: sustained rise carrying a substantial absolute case burden
-  return ratio >= SURFACE_SUSTAINED_RATIO && outbreakExcess(d) >= SURFACE_MIN_EXCESS;
+  return d.ytdCurrent / d.ytdPrevious >= SURFACE_SURGE_RATIO;
 }
 
 // Recognise the Minnesota reporting area regardless of how the NNDSS feed labels
@@ -1352,31 +1433,44 @@ let whoData = null;
 // ════════════════════════════════════════════════════════
 async function fetchCDC() {
   const currentYear = String(new Date().getFullYear());
-  const paramsWeek = new URLSearchParams({
+  const prevYear = String(Number(currentYear) - 1);
+  // No heuristic caching: an old max(week) answer would show a past week. Same
+  // trap as the respiratory feeds (see socrataJSON).
+  const getJSON = async params => {
+    const url = `https://data.cdc.gov/resource/x9gk-5huc.json?${new URLSearchParams(params).toString()}`;
+    const resp = await fetch(url, { cache: 'no-cache' });
+    if (!resp.ok) throw new Error(`CDC API ${resp.status}`);
+    return resp.json();
+  };
+
+  const weekData = await getJSON({
     '$select': 'max(week) as latest_week',
     '$where': `year='${currentYear}'`
   });
-  const weekUrl = `https://data.cdc.gov/resource/x9gk-5huc.json?${paramsWeek.toString()}`;
-  const weekResp = await fetch(weekUrl);
-  if (!weekResp.ok) throw new Error(`CDC API ${weekResp.status}`);
-
-  const weekData = await weekResp.json();
   const latestWeekRaw = weekData?.[0]?.latest_week;
   const latestWeek = Number.parseInt(latestWeekRaw, 10);
   if (!Number.isFinite(latestWeek)) {
     throw new Error(`No CDC week found for year ${currentYear}`);
   }
 
-  const paramsRows = new URLSearchParams({
-    '$where': `year='${currentYear}' AND week=${latestWeek}`,
-    '$limit': '50000'
-  });
-  const rowsUrl = `https://data.cdc.gov/resource/x9gk-5huc.json?${paramsRows.toString()}`;
-  const rowsResp = await fetch(rowsUrl);
-  if (!rowsResp.ok) throw new Error(`CDC API ${rowsResp.status}`);
-
-  const rows = await rowsResp.json();
-  return { rows, year: currentYear, week: latestWeek, weekUrl, rowsUrl };
+  // This year's rows for the latest week, plus LAST year's table for the same
+  // week, which is the fair baseline (see the BASELINE note above
+  // SURFACE_SURGE_RATIO). Only the columns actually used are requested. The
+  // baseline is optional: if it fails or comes back empty (e.g. a week 53 with
+  // no counterpart), processCDC falls back to this year's m4 column and says so.
+  const [rows, baseline] = await Promise.all([
+    getJSON({
+      '$select': 'states,label,m1,m2,m3,m4',
+      '$where': `year='${currentYear}' AND week=${latestWeek}`,
+      '$limit': '50000'
+    }),
+    getJSON({
+      '$select': 'states,label,m3',
+      '$where': `year='${prevYear}' AND week=${latestWeek}`,
+      '$limit': '50000'
+    }).catch(() => null)
+  ]);
+  return { rows, baselineRows: baseline, year: currentYear, week: latestWeek };
 }
 
 
@@ -1705,8 +1799,20 @@ async function fetchWHO() {
 //  RENDER: CDC
 // ════════════════════════════════════════════════════════
 function processCDC(cdcPayload) {
-  const { rows = [], year = String(new Date().getFullYear()), week = null } = cdcPayload || {};
+  const { rows = [], baselineRows = null, year = String(new Date().getFullYear()), week = null } = cdcPayload || {};
   const diseaseMap = {};
+
+  // Last year's YTD at this same week, as first published, keyed by labelKey().
+  // Aggregate areas are excluded exactly as for the current rows.
+  const baselineByKey = {};
+  const haveBaseline = Array.isArray(baselineRows) && baselineRows.length > 0;
+  if (haveBaseline) {
+    for (const row of baselineRows) {
+      const key = labelKey(row.label);
+      if (!key || isAggregateArea(String(row.states || '').trim())) continue;
+      baselineByKey[key] = (baselineByKey[key] || 0) + num(row.m3);
+    }
+  }
 
   for (const row of rows) {
     const display = cleanLabel(row.label);
@@ -1722,8 +1828,10 @@ function processCDC(cdcPayload) {
         display,
         currentWeek: 0,
         ytdCurrent: 0,
-        ytdPrevious: 0,
-        max52: 0,
+        ytdPrevious: 0,          // the baseline every comparison uses (set below)
+        ytdPreviousRevised: 0,   // m4: last year, fully revised since
+        baselineSource: 'revised',
+        maxStateWeek: 0,
         states: {}
       };
     }
@@ -1732,16 +1840,34 @@ function processCDC(cdcPayload) {
     const current = num(row.m1);
     const prev52 = num(row.m2);
     const ytdCurrent = num(row.m3);
-    const ytdPrevious = num(row.m4);
 
     d.currentWeek += current;
     d.ytdCurrent += ytdCurrent;
-    d.ytdPrevious += ytdPrevious;
-    d.max52 = Math.max(d.max52, prev52);
+    d.ytdPreviousRevised += num(row.m4);
+    // m2 is a per-area 52-week maximum. Maxima do not add across states, so this
+    // is the busiest single state-week, not a national figure, and is labelled so.
+    d.maxStateWeek = Math.max(d.maxStateWeek, prev52);
 
     if (!d.states[area]) d.states[area] = { current: 0, ytd: 0 };
     d.states[area].current += current;
     d.states[area].ytd += ytdCurrent;
+  }
+
+  // Choose each condition's baseline: last year's own table at this week when it
+  // carries the condition, else the revised m4. One narrow exception: an
+  // as-published 0 against a revised count above 0 is a reporting gap, not a
+  // real zero (a 1-case anthrax year read as "0 then, 1 now" and would have been
+  // pinned as new), so the revised count is used there too.
+  for (const d of Object.values(diseaseMap)) {
+    const key = labelKey(d.display);
+    const asPublished = baselineByKey[key];
+    if (asPublished !== undefined && (asPublished > 0 || d.ytdPreviousRevised <= 0)) {
+      d.ytdPrevious = asPublished;
+      d.baselineSource = 'as-published';
+    } else {
+      d.ytdPrevious = d.ytdPreviousRevised;
+      d.baselineSource = 'revised';
+    }
   }
 
   const all = Object.values(diseaseMap);
@@ -1766,14 +1892,15 @@ function processCDC(cdcPayload) {
     // signals pinned first, capped so the panel stays focused.
     diseases: surfaced.slice(0, SURFACE_MAX_CARDS),
     highConsequenceCount,
-    // Selection counts, so the panel can show the inclusion logic at work. This
-    // matters because data.cdc.gov is not reachable from the build environment
-    // (egress policy), so the thresholds cannot be tuned against the live feed
-    // here — only in the viewer's browser. Surfacing that the gate evaluated N
-    // conditions and kept M turns "why is the panel almost empty?" from a guess
-    // into something you can read off the page.
+    // Selection counts, so the panel can show the inclusion logic at work.
+    // Surfacing that the gate evaluated N conditions and kept M turns "why is
+    // the panel almost empty?" from a guess into something you can read off the
+    // page, as the viewer's browser actually received it.
     evaluated: all.length,
     surfacedCount: surfaced.length,
+    // Whether last year's same-week table was available. Without it every
+    // comparison falls back to the revised m4, which understates rises.
+    baselineAsPublished: haveBaseline,
     year,
     prevYear: String(Number(year) - 1),
     week
@@ -1792,6 +1919,7 @@ function renderCDC(cdcData) {
   const evaluated = cdcData?.evaluated ?? 0;
   const surfacedCount = cdcData?.surfacedCount ?? diseases.length;
   const highConsequenceCount = cdcData?.highConsequenceCount ?? 0;
+  const asPublished = cdcData?.baselineAsPublished ?? false;
   const noteEl = $('cdcNote');
   if (noteEl) {
     if (evaluated > 0) {
@@ -1799,16 +1927,23 @@ function renderCDC(cdcData) {
       const hcNote = highConsequenceCount > 0
         ? ` · ${fmt(highConsequenceCount)} high-consequence flagged`
         : '';
+      // Say which baseline was used, because it changes what "above last year"
+      // means. The fallback is flagged so an understated panel is not silent.
+      const baseNote = asPublished
+        ? `Last year = ${prevYear} week ${week} as first reported, so both years have had the same time for late reports to arrive.`
+        : `Last year's same-week table could not be loaded, so last year = ${prevYear}'s revised total, which makes rises look about 20% smaller than they are.`;
       noteEl.textContent =
         `Evaluated ${fmt(evaluated)} notifiable condition${evaluated !== 1 ? 's' : ''} · ` +
-        `${fmt(surfacedCount)} running above prior-year baseline${hcNote}${shownNote}`;
+        `${fmt(surfacedCount)} surfaced${hcNote}${shownNote}. ` +
+        `A condition surfaces when it is at least 20% above last year at the same week by more than chance variation, ` +
+        `or is a high-consequence pathogen with cases. ${baseNote}`;
     } else {
       noteEl.textContent = '';
     }
   }
 
   if (!diseases || diseases.length === 0) {
-    $('cdcSection').innerHTML = '<div class="no-data">No notifiable conditions met the outbreak-surfacing criteria (above prior-year baseline, or an active/rising high-consequence pathogen) for the latest MMWR week.</div>';
+    $('cdcSection').innerHTML = '<div class="no-data">No notifiable conditions met the outbreak-surfacing criteria (clearly above last year at the same week, or a high-consequence pathogen with cases) for the latest MMWR week.</div>';
     return;
   }
 
@@ -1855,6 +1990,24 @@ function renderCDC(cdcData) {
       ? '<span class="trend-badge hc-badge">⚠ High-consequence</span>'
       : `<span class="trend-badge trend-${trend}">${trendText}</span>`;
 
+    // One plain sentence saying why this card is on the panel, so the surfacing
+    // rule is readable per card instead of only in the code.
+    const excess = outbreakExcess(d);
+    let reason;
+    if (highCon) {
+      reason = isEmergent(d) ? 'High-consequence pathogen, no cases at this point last year.'
+        : d.currentWeek > 0 ? `High-consequence pathogen, ${fmt(d.currentWeek)} new case${d.currentWeek !== 1 ? 's' : ''} reported this week.`
+        : d.ytdCurrent > d.ytdPrevious ? 'High-consequence pathogen, more cases than at this point last year.'
+        : 'High-consequence pathogen, any case is notable. Not rising and none reported this week.';
+    } else if (emergent) {
+      reason = `No cases at this point last year, ${fmt(d.ytdCurrent)} so far this year.`;
+    } else {
+      reason = `${fmt(excess)} more case${excess !== 1 ? 's' : ''} than at this week last year, beyond normal year-to-year variation.`;
+    }
+    if (d.baselineSource === 'revised' && cdcData?.baselineAsPublished) {
+      reason += ` Compared with last year's revised count, because its early figure was missing or zero.`;
+    }
+
     // Build the state breakdown. Minnesota is always pinned to the top and
     // highlighted so it is visible for every disease, even when it falls outside
     // the top 20 by case count (or has no reported row, shown as 0). Aggregate
@@ -1893,12 +2046,13 @@ function renderCDC(cdcData) {
         </div>
         <div class="stat-cell">
           <span class="stat-num">${fmt(d.ytdPrevious)}</span>
-          <span class="stat-label">YTD ${prevYear}</span>
+          <span class="stat-label">${prevYear} same wk</span>
         </div>
       </div>
+      <div class="disease-reason">${esc(reason)}</div>
       <div class="disease-card-footer">
-        <span>52-wk max: <strong>${fmt(d.max52)}</strong></span>
-        <span class="pct-change ${pctClass}">${pctStr} YoY</span>
+        <span title="Highest single-week count reported by any one state in the past 52 weeks">Peak state-week: <strong>${fmt(d.maxStateWeek)}</strong></span>
+        <span class="pct-change ${pctClass}">${pctStr} vs ${prevYear}</span>
         <span class="expand-hint">▼ states</span>
       </div>
       <div class="state-breakdown" id="sb-${idx}">
@@ -1980,22 +2134,26 @@ function processResp(edRes, hospRes, rtRes) {
   const hospFresh = hosp ? dataFreshness(hosp.weekEnd, RESP_FRESHNESS_WINDOW_DAYS) : null;
   const rtFresh   = rt   ? dataFreshness(rt.asOf, RESP_FRESHNESS_WINDOW_DAYS)      : null;
 
-  // Shared y-scale for the trajectory sparklines. Scaling each pathogen to its own
-  // max would turn a flat 0.02% RSV summer into a dramatic-looking mountain range;
+  // Weekly ED-visit history for the trend charts, aligned on week_end so a week
+  // missing for one geography leaves a gap in that line instead of shifting every
+  // later point sideways onto the wrong date.
+  const histWeeks = [...new Set((ed?.history || [])
+    .map(r => isoDay(r.week_end)).filter(Boolean))].sort();
+  const histRows = { Minnesota: {}, 'United States': {} };
+  (ed?.history || []).forEach(r => {
+    const w = isoDay(r.week_end);
+    if (w && histRows[r.geography]) histRows[r.geography][w] = r;
+  });
+  const histSeries = (geo, field) =>
+    histWeeks.map(w => histRows[geo][w] ? numOrNull(histRows[geo][w][field]) : null);
+
+  // Shared y-scale for the trend charts. Scaling each pathogen to its own max
+  // would turn a flat 0.02% RSV summer into a dramatic-looking mountain range;
   // one scale across all three keeps the comparison honest and is the whole point
   // of putting them side by side.
-  const histByGeo = { Minnesota: [], 'United States': [] };
-  (ed?.history || []).forEach(r => {
-    const g = r.geography;
-    if (histByGeo[g]) histByGeo[g].push(r);
-  });
-  let sparkMax = 0;
-  Object.values(histByGeo).forEach(series => series.forEach(r => {
-    RESP_PATHOGENS.forEach(p => {
-      const v = numOrNull(r[p.edPct]);
-      if (v !== null && v > sparkMax) sparkMax = v;
-    });
-  }));
+  let chartMax = 0;
+  RESP_PATHOGENS.forEach(p => ['Minnesota', 'United States'].forEach(g =>
+    histSeries(g, p.edPct).forEach(v => { if (v !== null && v > chartMax) chartMax = v; })));
 
   const pathogens = RESP_PATHOGENS.map(p => {
     const rtStates = rtByDisease[p.rtDisease] || {};
@@ -2063,9 +2221,9 @@ function processResp(edRes, hospRes, rtRes) {
       rtGrowingStates: growing,
       rtEstimatedStates: estimatedStates,
       lastEstimated,
-      // Sparkline series on the shared scale.
-      histMn: (histByGeo['Minnesota'] || []).map(r => numOrNull(r[p.edPct])),
-      histUs: (histByGeo['United States'] || []).map(r => numOrNull(r[p.edPct])),
+      // Weekly chart series, one value (or null) per entry of histWeeks.
+      histMn: histSeries('Minnesota', p.edPct),
+      histUs: histSeries('United States', p.edPct),
       states
     };
   });
@@ -2077,8 +2235,8 @@ function processResp(edRes, hospRes, rtRes) {
     rtAsOf: rt?.asOf || null,
     rtEstDate: rt?.estDate || null,
     edFresh, hospFresh, rtFresh,
-    sparkMax,
-    histWeeks: (histByGeo['Minnesota'] || []).map(r => isoDay(r.week_end)),
+    chartMax,
+    histWeeks,
     stateCount: roster.length,
     hospJurisdictions: Object.keys(hospByAbbr).length
   };
@@ -2129,14 +2287,17 @@ const respCell = (v, cls) =>
 
 // The ED feed's own trend vocabulary. "Sparse", "Limited Data", "Data Unavailable"
 // and "No Data" are reporting states, not directions, so they must not be dressed
-// up as a trend.
+// up as a trend. The chip is Minnesota's ED trend as CDC classifies it, and says
+// so, because an unlabelled "No change" beside a chart reads as a verdict on the
+// whole card.
 function respTrendChip(t) {
   if (!t) return '';
   const v = String(t).trim();
-  if (/^increasing$/i.test(v)) return '<span class="resp-trend-badge trend-up">▲ Increasing</span>';
-  if (/^decreasing$/i.test(v)) return '<span class="resp-trend-badge trend-down">▼ Decreasing</span>';
-  if (/^no change$/i.test(v))  return '<span class="resp-trend-badge trend-stable">● No change</span>';
-  return `<span class="resp-trend-badge trend-stable">${esc(v)}</span>`;
+  const tip = ' title="CDC\'s own trend call for Minnesota emergency department visits"';
+  if (/^increasing$/i.test(v)) return `<span class="resp-trend-badge trend-up"${tip}>MN ▲ Increasing</span>`;
+  if (/^decreasing$/i.test(v)) return `<span class="resp-trend-badge trend-down"${tip}>MN ▼ Decreasing</span>`;
+  if (/^no change$/i.test(v))  return `<span class="resp-trend-badge trend-stable"${tip}>MN ● No change</span>`;
+  return `<span class="resp-trend-badge trend-stable"${tip}>MN: ${esc(v)}</span>`;
 }
 
 // Week-over-week change on admissions. NHSN reports -100 when a jurisdiction goes
@@ -2149,32 +2310,220 @@ function respChg(v) {
   return `<span class="rv">${s}</span>`;
 }
 
-// 12-week trajectory on a scale shared by all three pathogens.
-function respSparkline(mn, us, max, weeks) {
-  const pts = mn.filter(v => v !== null);
-  if (pts.length < 2) return '';
-  const W = 100, H = 26, top = max > 0 ? max : 1;
-  const xy = series => series.map((v, i) => {
-    if (v === null) return null;
-    const x = (i / Math.max(1, series.length - 1)) * W;
-    const y = H - (v / top) * H;
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  }).filter(Boolean).join(' ');
+// ── Weekly ED-visit trend chart ──
+// One chart per virus: the share of all emergency department visits that were for
+// that virus, week by week, Minnesota against the US. Minnesota is the series the
+// card is about, so it carries the accent green and the US is the grey context
+// line (both checked for colour-blind separation and 3:1 contrast on the card).
+// The chart is drawn after the cards are in the page so it can be sized to its
+// real pixel width: text and dots stay crisp instead of stretching with the card.
+const RESP_CHART_COLORS = { mn: '#3A6E2E', us: '#968D81' };
+const respChartData = {};   // pathogen key -> { label, mn, us, weeks, max }
 
-  const mnPts = xy(mn), usPts = xy(us);
-  const first = weeks[0] ? fmtDate(weeks[0]) : '';
-  const last = weeks[weeks.length - 1] ? fmtDate(weeks[weeks.length - 1]) : '';
-  return `<div class="resp-spark">
-      <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img"
-           aria-label="Minnesota emergency department visit share over the last ${mn.length} weeks">
-        <polyline points="${usPts}" fill="none" stroke="#B9AF9D" stroke-width="1.2"
-                  vector-effect="non-scaling-stroke" stroke-linejoin="round"/>
-        <polyline points="${mnPts}" fill="none" stroke="#4A6B3A" stroke-width="1.8"
-                  vector-effect="non-scaling-stroke" stroke-linejoin="round"/>
-      </svg>
-      <div class="resp-spark-cap">${esc(first)} → ${esc(last)} · MN solid, US grey · scale 0 to ${top.toFixed(2)}% shared by all three</div>
+// Round the shared axis maximum up to a clean value whose midpoint is also clean.
+function respNiceMax(v) {
+  const steps = [0.1, 0.2, 0.4, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 8, 10, 15, 20, 30, 40, 50, 100];
+  return steps.find(s => s >= v) || Math.ceil(v);
+}
+const respTick = v => +v.toFixed(2) + '%';
+const respShortDate = iso => {
+  const d = new Date(iso + 'T00:00:00');
+  return isNaN(d) ? String(iso) : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+};
+// Indexes of the first and last reported (non-null) week in a series.
+const respEnds = s => {
+  let a = -1, b = -1;
+  s.forEach((v, i) => { if (v !== null) { if (a < 0) a = i; b = i; } });
+  return [a, b];
+};
+
+// The chart's message in words: where Minnesota and the US are now versus the
+// week before and the start of the window, and CDC's own trend call. Directions
+// are read off the two-decimal values shown, so the sentence never contradicts
+// the numbers.
+function respChartSummary(p, weeks) {
+  const move = (from, to) => {
+    const a = +from.toFixed(2), b = +to.toFixed(2);
+    return b > a ? 'up from' : b < a ? 'down from' : 'unchanged from';
+  };
+  // "down from 0.30% the week before and up from 0.09% on Aug 1"
+  const history = (s, last) => {
+    const bits = [];
+    const prev = last - 1;
+    if (prev >= 0 && s[prev] !== null) bits.push(`${move(s[prev], s[last])} ${respPct(s[prev])} the week before`);
+    const first = respEnds(s)[0];
+    if (first >= 0 && first < prev) bits.push(`${move(s[first], s[last])} ${respPct(s[first])} on ${respShortDate(weeks[first])}`);
+    return bits.length ? ', ' + bits.join(' and ') : '';
+  };
+  const parts = [];
+  const mb = respEnds(p.histMn)[1];
+  if (mb >= 0) {
+    parts.push(`In the week ending ${respShortDate(weeks[mb])}, <strong>${respPct(p.histMn[mb])}</strong> of Minnesota ER visits were for ${esc(p.label)}${history(p.histMn, mb)}.`);
+  }
+  const ub = respEnds(p.histUs)[1];
+  if (ub >= 0) {
+    parts.push(`Nationally: <strong>${respPct(p.histUs[ub])}</strong>${history(p.histUs, ub)}.`);
+  }
+  const t = String(p.edTrendMn || '').trim();
+  if (/^(increasing|decreasing|no change)$/i.test(t)) {
+    parts.push(`CDC's own trend call for Minnesota: ${esc(t.toLowerCase())}.`);
+  }
+  return parts.join(' ');
+}
+
+// The chart block's static HTML. The plot itself is filled in by drawRespChart.
+function respChartBlock(p, data) {
+  const weeks = data.histWeeks || [];
+  const enough = s => s.filter(v => v !== null).length >= 2;
+  if (!weeks.length || !(enough(p.histMn) || enough(p.histUs))) {
+    return '<div class="resp-chart-wrap"><div class="resp-chart-note">Not enough weekly data to draw a trend.</div></div>';
+  }
+  const max = respNiceMax(data.chartMax);
+  respChartData[p.key] = { label: p.label, mn: p.histMn, us: p.histUs, weeks, max };
+
+  const cell = v => v === null ? '<span class="rv-none">no data</span>' : respPct(v);
+  const rows = weeks.map((w, i) =>
+    `<tr><td>${esc(fmtDate(w))}</td><td>${cell(p.histMn[i])}</td><td>${cell(p.histUs[i])}</td></tr>`
+  ).reverse().join('');
+
+  return `<div class="resp-chart-wrap">
+      <div class="resp-chart-title">Weekly share of ER visits for ${esc(p.label)}</div>
+      <div class="resp-chart-legend" aria-hidden="true">
+        <span><i class="resp-key" style="background:${RESP_CHART_COLORS.mn}"></i>Minnesota</span>
+        <span><i class="resp-key" style="background:${RESP_CHART_COLORS.us}"></i>United States</span>
+      </div>
+      <div class="resp-chart" data-key="${esc(p.key)}" tabindex="0" role="img"
+           aria-label="Line chart: weekly share of emergency department visits for ${esc(p.label)}, Minnesota and United States, last ${weeks.length} weeks. Use left and right arrow keys to read each week."></div>
+      <p class="resp-chart-summary">${respChartSummary(p, weeks)}</p>
+      <div class="resp-chart-note">Last ${weeks.length} weeks, by week ending date. All three virus charts share the same 0 to ${respTick(max)} scale, so line heights compare directly across viruses. Hover or tap the chart to read a week.</div>
+      <details class="resp-chart-table">
+        <summary>Weekly numbers</summary>
+        <table class="state-table">
+          <thead><tr><th>Week ending</th><th>MN</th><th>US</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </details>
     </div>`;
 }
+
+function drawRespChart(el) {
+  const c = respChartData[el.dataset.key];
+  if (!c) return;
+  const W = Math.max(220, Math.round(el.clientWidth));
+  const H = 132, padL = 42, padR = 12, padT = 10, padB = 22;
+  const x0 = padL, x1 = W - padR, y0 = padT, y1 = H - padB;
+  const n = c.weeks.length;
+  const xAt = i => n > 1 ? x0 + (i / (n - 1)) * (x1 - x0) : (x0 + x1) / 2;
+  const yAt = v => y1 - (Math.min(v, c.max) / c.max) * (y1 - y0);
+  // A missing week breaks the line rather than being drawn as zero.
+  const path = s => {
+    let d = '', pen = false;
+    s.forEach((v, i) => {
+      if (v === null) { pen = false; return; }
+      d += (pen ? 'L' : 'M') + xAt(i).toFixed(1) + ',' + yAt(v).toFixed(1);
+      pen = true;
+    });
+    return d;
+  };
+  const endDot = (s, color) => {
+    const i = respEnds(s)[1];
+    return i < 0 ? '' : `<circle cx="${xAt(i).toFixed(1)}" cy="${yAt(s[i]).toFixed(1)}" r="4" fill="${color}" class="rc-ring"/>`;
+  };
+  const grid = [0, c.max / 2, c.max].map(t => {
+    const y = yAt(t).toFixed(1);
+    return `<line x1="${x0}" x2="${x1}" y1="${y}" y2="${y}" class="rc-grid"/>` +
+           `<text x="${x0 - 6}" y="${y}" dy="0.32em" class="rc-ytick">${respTick(t)}</text>`;
+  }).join('');
+  const xIdx = n > 2 ? [0, Math.floor((n - 1) / 2), n - 1] : [...Array(n).keys()];
+  const xLabels = xIdx.map((i, k) => {
+    const anchor = k === 0 ? 'start' : k === xIdx.length - 1 ? 'end' : 'middle';
+    return `<text x="${xAt(i).toFixed(1)}" y="${H - 5}" text-anchor="${anchor}" class="rc-xtick">${esc(respShortDate(c.weeks[i]))}</text>`;
+  }).join('');
+
+  el.innerHTML = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true">
+      ${grid}${xLabels}
+      <path d="${path(c.us)}" class="rc-line" stroke="${RESP_CHART_COLORS.us}"/>
+      <path d="${path(c.mn)}" class="rc-line" stroke="${RESP_CHART_COLORS.mn}"/>
+      ${endDot(c.us, RESP_CHART_COLORS.us)}${endDot(c.mn, RESP_CHART_COLORS.mn)}
+      <g class="rc-hover" visibility="hidden">
+        <line class="rc-cross" y1="${y0}" y2="${y1}"/>
+        <circle class="rc-ring rc-hus" r="4" fill="${RESP_CHART_COLORS.us}"/>
+        <circle class="rc-ring rc-hmn" r="4" fill="${RESP_CHART_COLORS.mn}"/>
+      </g>
+    </svg>
+    <div class="rc-tip" hidden></div>`;
+
+  const svg = el.querySelector('svg');
+  const hover = svg.querySelector('.rc-hover');
+  const cross = svg.querySelector('.rc-cross');
+  const tip = el.querySelector('.rc-tip');
+  const place = (dotEl, v, x) => {
+    if (v === null) { dotEl.setAttribute('visibility', 'hidden'); return; }
+    dotEl.setAttribute('visibility', 'inherit');
+    dotEl.setAttribute('cx', x.toFixed(1));
+    dotEl.setAttribute('cy', yAt(v).toFixed(1));
+  };
+  // Tooltip text goes in through textContent, never innerHTML.
+  const tipRow = (v, name, color) => {
+    const row = document.createElement('div');
+    row.className = 'rc-tip-row';
+    const key = document.createElement('i');
+    key.className = 'resp-key';
+    key.style.background = color;
+    const val = document.createElement('strong');
+    val.textContent = v === null ? 'no data' : respPct(v);
+    const lab = document.createElement('span');
+    lab.textContent = name;
+    row.append(key, val, lab);
+    return row;
+  };
+  const show = i => {
+    i = Math.max(0, Math.min(n - 1, i));
+    el.dataset.idx = String(i);
+    const x = xAt(i);
+    cross.setAttribute('x1', x.toFixed(1));
+    cross.setAttribute('x2', x.toFixed(1));
+    place(svg.querySelector('.rc-hmn'), c.mn[i], x);
+    place(svg.querySelector('.rc-hus'), c.us[i], x);
+    hover.setAttribute('visibility', 'visible');
+    const head = document.createElement('div');
+    head.className = 'rc-tip-head';
+    head.textContent = 'Week ending ' + fmtDate(c.weeks[i]);
+    tip.replaceChildren(head,
+      tipRow(c.mn[i], 'Minnesota', RESP_CHART_COLORS.mn),
+      tipRow(c.us[i], 'United States', RESP_CHART_COLORS.us));
+    tip.hidden = false;
+    // Sit beside the crosshair, on whichever side has room.
+    const tw = tip.offsetWidth;
+    tip.style.left = (x + 10 + tw <= W ? x + 10 : Math.max(0, x - 10 - tw)) + 'px';
+  };
+  const hide = () => { hover.setAttribute('visibility', 'hidden'); tip.hidden = true; };
+  // Assigned, not added, so a redraw on resize never stacks duplicate handlers.
+  el.onpointermove = e => {
+    const r = svg.getBoundingClientRect();
+    show(Math.round(((e.clientX - r.left) - x0) / Math.max(1, x1 - x0) * (n - 1)));
+  };
+  el.onpointerleave = hide;
+  el.onfocus = () => show(el.dataset.idx ? +el.dataset.idx : n - 1);
+  el.onblur = hide;
+  el.onkeydown = e => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    const cur = el.dataset.idx ? +el.dataset.idx : n - 1;
+    show(cur + (e.key === 'ArrowRight' ? 1 : -1));
+  };
+}
+
+function drawRespCharts() {
+  document.querySelectorAll('.resp-chart').forEach(drawRespChart);
+}
+
+// Charts are sized in pixels, so redraw them when the layout width changes.
+let respChartResizeTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(respChartResizeTimer);
+  respChartResizeTimer = setTimeout(drawRespCharts, 150);
+});
 
 // The modeled block. Rt never appears without the observed burden above it, and
 // never without the sentence saying it is direction only.
@@ -2323,7 +2672,7 @@ function renderResp(data) {
             <span class="rl">Emergency dept visits<small>share of all ED visits</small></span>
             ${respCell(respPct(p.edMn), 'mn')}${respCell(respPct(p.edUs))}
           </div>
-          ${respSparkline(p.histMn, p.histUs, data.sparkMax, data.histWeeks)}
+          ${respChartBlock(p, data)}
         </div>`;
 
     const hospBlock = errors.hosp
@@ -2386,6 +2735,7 @@ function renderResp(data) {
   }).join('');
 
   target.innerHTML = feeds + explainer + `<div class="resp-grid">${cards}</div>`;
+  drawRespCharts();
 
   pathogens.forEach(p => {
     const btn = $(`respBtn-${p.key}`);

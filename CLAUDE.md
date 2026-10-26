@@ -36,11 +36,30 @@ appear no matter how large it grew, and every new outbreak required a code edit.
 reintroduce a name allowlist.**
 
 The replacement lets the data decide. `processCDC()` aggregates *all* conditions (aggregate
-areas still excluded), then surfaces one when it is running above its own prior-year
-baseline, using fields the feed already provides:
+areas still excluded), then surfaces one when it is running clearly above the same point last
+year:
 
 - Group every row by `cleanLabel(label)` (folds footnote markers like `†`/`*` so state rows
   for one condition don't split into duplicate cards).
+- **Baseline: last year's own table at the same MMWR week, not `m4`.** `fetchCDC()` pulls a
+  second, trimmed table (`year = Y-1`, same `week`, `$select=states,label,m3`) and
+  `processCDC()` uses its summed `m3` as `ytdPrevious` for every comparison. Reason, measured on
+  the live feed: NNDSS counts keep growing for about a year as late reports arrive, so `m4` (last
+  year, fully revised) is about **20% higher** than the same period looked when it was first
+  published (median backfill 1.20 for 2025 data, 1.26 for 2024, IQR roughly 1.13-1.35).
+  Comparing this year's still-incomplete `m3` against that revised `m4` pushed every condition
+  about 18% toward "declining". It is not a small effect: in October 2025 it showed West Nile as
+  *down* 7% in a season that finished *up* 54%.
+  - Cross-year matching uses `labelKey()` (lowercase letters and digits only) because labels
+    drift in spacing between annual tables: 2025 has `SalmonellaParatyphi infection`, 2026 has
+    `Salmonella Paratyphi infection`.
+  - Fallbacks, per condition, to the revised `m4` (`baselineSource = 'revised'`): the label is
+    absent from last year's table (a new reporting category), or last year's early figure is
+    **0 while the revised one is above 0**. That second case is a reporting gap, not a real
+    zero: without it a 1-case anthrax year read as "0 then, 1 now", counted as emergent, and was
+    pinned above a 33,000-case outbreak. If last year's whole table fails or comes back empty
+    (e.g. a week 53 with no counterpart), every condition falls back and the `.cdc-note` says so
+    in words, since that panel understates rises.
 - **High-consequence severity tier (surfaces before the trend logic even runs).**
   `isHighConsequence(d)` matches a condition's cleaned label against `HIGH_CONSEQUENCE_PATTERNS`
   — a *deliberately narrow* set of pathogens whose expected US baseline is essentially **zero**,
@@ -70,8 +89,8 @@ baseline, using fields the feed already provides:
     boundary falls on the comma/space.
   - Why the tier exists at all: the trend signal is magnitude- and change-driven, so it
     *structurally* suppresses exactly the pathogens where a couple of cases is a five-alarm fire —
-    a 2-case novel-influenza or anthrax cluster sits under `SURFACE_MIN_YTD`, and even above it
-    ranks last by excess and falls off the cap. Missing a small high-consequence signal is the
+    a 2-case novel-influenza or anthrax cluster cannot pass the chance-variation test, and even if
+    it did it would rank last by excess and fall off the cap. Missing a small high-consequence signal is the
     worst failure mode for an early-warning monitor, and no amount of loosening the ratio/excess
     knobs fixes it (that only pulls in endemic noise). **This is NOT a return of the banned
     `DISEASE_KEYWORDS` allowlist.** That allowlist was the *only* path to surface, so any unlisted
@@ -79,36 +98,63 @@ baseline, using fields the feed already provides:
     only *raise* a dangerous pathogen's visibility, never suppress anything — every condition is
     still independently scored by the data-driven signal below, so new/unlisted outbreaks still
     appear automatically.
-- Otherwise (not high-consequence), `isSurfaced(d)`: keep a condition if
-  `ytdCurrent (m3) >= SURFACE_MIN_YTD` (noise floor, 5) **and** it clears one of three paths:
-  - *emergent* — `ytdPrevious`/m4 `== 0` with current cases (a new/re-emergent condition); or
-  - *strong surge* (path 1) — `ytdCurrent / ytdPrevious >= SURFACE_SURGE_RATIO` (1.2 = at
-    least 20% above last year), shown regardless of volume so genuine low-base surges appear; or
-  - *sustained rise* (path 2) — `ratio >= SURFACE_SUSTAINED_RATIO` (1.10 = at least 10% above
-    last year) **and** `outbreakExcess(d) >= SURFACE_MIN_EXCESS` (50 excess cases).
-  Path 2 exists because a single ratio bar is magnitude-blind: without it a condition climbing
-  10-19% while carrying dozens-to-hundreds of excess cases (a real-world burden) would be
-  dropped, while a tiny 12→19 jump surfaces at +58%. The `>= 1.10` guard on path 2 keeps the
-  high-volume endemic giants out — e.g. chlamydia up 1% is ~5,000 raw excess cases but ratio
-  ≈ 1.01, so it fails both paths. Flat endemic conditions (ratio < 1.10) fall away on their own.
-  **Keep this floor a real distance below the 1.2 surge bar.** It was originally 1.15 — only a
-  sliver under 1.2 — so path 2's *effective* reach was just the `[1.15, 1.20)` window that path 1
-  did not already cover. That window is rarely populated, so path 2 changed almost nothing on the
-  live panel (the "it didn't work" report), and any high-burden condition rising 10-15% was still
-  dropped. Widening to 1.10 gives the absolute-burden signal a band it can actually act in.
-- Rank by `outbreakExcess(d)` = `ytdCurrent - ytdPrevious` (excess cases over last year — an
-  interpretable "how far above normal" measure that balances ratio and volume), cap at
-  `SURFACE_MAX_CARDS` (24) so the panel stays focused.
-- `m3`/`m4` are plain counts that sum correctly across states; the 52-week max (`m2`) does
-  not, so it is not used for the surfacing decision. Emergent conditions have no prior-year
-  baseline, so their card shows a "🆕 New this year" badge and a `NEW` YoY chip instead of a
-  misleading `N/A · Stable`.
+- Otherwise (not high-consequence), `isSurfaced(d)` keeps a condition when **both**:
+  1. *Beyond chance:* `riseZ(d) = (now - last - 1) / sqrt(now + last) >= SURFACE_MIN_Z`
+     (1.645, one-sided 95%). This is the normal approximation to the exact conditional test for
+     two Poisson counts; checked against the exact binomial test over 204,000 count pairs, it
+     disagreed on 4, all sitting at p = 0.05. It replaces both the old fixed 5-case floor and the
+     old "sustained rise" path: a 9 → 14 jump is +56% but well inside chance and stays out, a
+     condition with no cases last year needs 5 (the same floor as before), and large conditions
+     clear it easily.
+  2. *Big enough to matter:* emergent (`ytdPrevious == 0`), or `ytdCurrent / ytdPrevious >=
+     SURFACE_SURGE_RATIO` (1.2, at least 20% above last year at the same week). This is what
+     keeps the high-volume endemic giants out: chlamydia at +2% is statistically "significant"
+     at a million cases but nowhere near the 20% bar.
+- **Evidence for this rule (backtest, re-run it before changing it).** Standing at weeks 12, 25
+  and 41 of 2024 and 2025, each rule was scored against how the year actually turned out once
+  both years had a full year of late reports (truth = matured ratio >= 1.10 and beyond chance):
 
-The thresholds (`SURFACE_MIN_YTD`, `SURFACE_SURGE_RATIO`, `SURFACE_SUSTAINED_RATIO`,
-`SURFACE_MIN_EXCESS`, `SURFACE_MAX_CARDS`, `HIGH_CONSEQUENCE_MIN_YTD`) are the tuning knobs for
-the *trend* signal; adjust those rather than adding disease names to the trend logic. The one
-list you *do* curate by name is `HIGH_CONSEQUENCE_PATTERNS`, and only to widen/narrow the
-additive severity floor — never to gate what the trend signal can surface.
+  | Rule | Precision | Recall |
+  |---|---|---|
+  | Old: `m4` baseline, 1.2 surge or 1.10 + 50 excess, 5-case floor | 85% | 51% |
+  | **Current: as-published baseline, 1.2 and z >= 1.645** | **85%** | **71%** |
+  | As-published baseline, 1.10 and z >= 1.645 | 77% | 77% |
+  | Current plus a guard that `now >= 0.9 x m4` | 91% | 67% |
+
+  Same precision as before, a fifth more of the real rises caught. With a fair baseline the
+  `[1.10, 1.20)` band is mostly reporting-timing noise (6 real rises against 11 false alarms), so
+  **do not re-add a 1.10 "sustained rise" path**: it existed to compensate for the biased `m4`
+  baseline, which made "+10%" really mean about +30%. The `0.9 x m4` guard was also rejected: it
+  removed 7 false alarms but also 6 real rises, including *Candida auris* and CPO, the
+  antimicrobial-resistance signals the panel most needs. Known residual weakness: when last
+  year's early figure was depressed by a one-off reporting backlog (e.g. *C. auris* clinical in
+  2024), this year looks inflated against it. No method here fixes that without losing more.
+- **Rejected: a "last 8 weeks" window.** Differencing published cumulative counts
+  (`m3(week N) - m3(week N-8)`) to get a more current signal was tried against the live feed and
+  is unusable: states upload late cases in batches, so 8-week differences swing wildly
+  (chlamydia +27%, gonorrhea +42%) and some go negative (chronic hepatitis B, chikungunya) when
+  cases are reclassified. The year-to-date window lags, but it is the stable one. The card's
+  "This week" figure is where current activity shows.
+- Rank by `outbreakExcess(d)` = `ytdCurrent - ytdPrevious` (excess cases over last year at this
+  week, an interpretable "how far above normal" measure that balances ratio and volume), cap at
+  `SURFACE_MAX_CARDS` (24) so the panel stays focused.
+- Each card prints **one sentence saying why it is on the panel** (`.disease-reason`), e.g.
+  "29,929 more cases than at this week last year, beyond normal year-to-year variation", or for
+  the severity tier "High-consequence pathogen, 153 new cases reported this week". The third stat
+  cell is labelled `<prev year> same wk`, and the chip reads `+N% vs <prev year>`.
+- `m3` sums correctly across states; the 52-week max (`m2`) does not, so it is not used for the
+  surfacing decision. The card footer shows it as **"Peak state-week"** (`maxStateWeek`, the
+  busiest single state-week in the past 52 weeks). It was previously labelled "52-wk max", which
+  read as a national figure it never was. Emergent conditions have no prior-year baseline, so
+  their card shows a "🆕 New this year" badge and a `NEW` chip instead of a misleading
+  `N/A · Stable`.
+
+The thresholds (`SURFACE_SURGE_RATIO`, `SURFACE_MIN_Z`, `SURFACE_MAX_CARDS`,
+`HIGH_CONSEQUENCE_MIN_YTD`) are the tuning knobs for the *trend* signal; adjust those rather than
+adding disease names to the trend logic, and backtest any change against matured outcomes first
+(the method above needs only four extra `x9gk-5huc` tables per snapshot). The one list you *do*
+curate by name is `HIGH_CONSEQUENCE_PATTERNS`, and only to widen/narrow the additive severity
+floor, never to gate what the trend signal can surface.
 
 **Surfacing diagnostic (tune from real data, not guesses):** `data.cdc.gov` **is reachable
 from a session with full network access.** An earlier version of this file claimed a hard egress
@@ -120,11 +166,13 @@ actually received rather than what a session saw. `processCDC()` returns `evalua
 conditions seen, aggregates excluded) and `surfacedCount` (how many passed `isSurfaced` before
 the card cap), plus `highConsequenceCount` (how many surfaced via the severity tier), and
 `renderCDC()` prints them into the `.cdc-note` line under the US section header ("Evaluated N
-notifiable conditions · M running above prior-year baseline · P high-consequence flagged ·
-showing top K"). This turns "why is the panel almost empty?" from a guess into something readable off the
-live page: if `M` is small the data is genuinely quiet, if `M` is large but `K` is capped raise
-`SURFACE_MAX_CARDS`. Do not tune the ratio/excess knobs blind — read this line on the live site
-first.
+notifiable conditions · M surfaced · P high-consequence flagged · showing top K", followed by
+the rule in one sentence and which baseline was used). `baselineAsPublished` says whether last
+year's same-week table loaded; when it did not, the note says rises look about 20% smaller than
+they are. This turns "why is the panel almost empty?" from a guess into something readable off
+the live page: if `M` is small the data is genuinely quiet, if `M` is large but `K` is capped
+raise `SURFACE_MAX_CARDS`. Do not tune the knobs blind: read this line on the live site and
+backtest first.
 
 **Minnesota focus:** This dashboard gives Minnesota special prominence. In every disease
 card's state breakdown, the Minnesota row is pinned to the top and highlighted (`.mn-row`),
@@ -135,15 +183,26 @@ case-insensitively as either `MINNESOTA` or `MN`, since the live field could use
 
 **Critical two-step query pattern:**
 
-Step 1 — find the latest available week for the current year:
+Step 1: find the latest available week for the current year:
 ```
 GET https://data.cdc.gov/resource/x9gk-5huc.json?$select=max(week)%20as%20latest_week&$where=year='YYYY'
 ```
 
-Step 2 — fetch all rows for that week:
+Step 2: fetch all rows for that week (only the columns used):
 ```
-GET https://data.cdc.gov/resource/x9gk-5huc.json?$where=year='YYYY'%20AND%20week=<N>&$limit=50000
+GET https://data.cdc.gov/resource/x9gk-5huc.json?$select=states,label,m1,m2,m3,m4&$where=year='YYYY'%20AND%20week=<N>&$limit=50000
 ```
+
+Step 3: in parallel, last year's table for the same week, the fair baseline (see above):
+```
+GET https://data.cdc.gov/resource/x9gk-5huc.json?$select=states,label,m3&$where=year='<YYYY-1>'%20AND%20week=<N>&$limit=50000
+```
+
+Trimming with `$select` keeps the two tables together (about 108 KB gzipped) slightly under the
+single untrimmed table they replaced (about 117 KB). All three queries are fetched with
+`cache: 'no-cache'` for the same heuristic-caching reason as the respiratory feeds. The dataset
+holds 2022 onward, so the baseline week is always available except a week 53 with no
+counterpart.
 
 Never assume a fixed week number. The dataset lags publication by one to two weeks, so the max-week query is required every session.
 
@@ -273,6 +332,42 @@ than assumed. See below.
   percentage or a modelled Rt sitting alongside them would read as one, which is exactly the
   confusion this section exists to prevent.
 
+#### Weekly ED-visit trend chart (one per virus card)
+
+The first version was a 26px sparkline with no axis, no values and a one-line caption ("MN
+solid, US grey, scale 0 to X% shared by all three"). The user reported not being able to tell
+what it showed. It was rebuilt so it reads without decoding:
+
+- **Title in words** ("Weekly share of ER visits for Influenza"), a **legend** with line keys,
+  a **y-axis** with three clean gridlines (`0%`, midpoint, max via `respNiceMax()`), and **x-axis
+  dates** (first, middle, last week ending).
+- **A plain-language summary under it** (`respChartSummary()`): this week's Minnesota and US
+  share, versus the week before and versus the start of the window, plus CDC's own trend call.
+  Directions are read off the two-decimal values shown, so the sentence never contradicts the
+  numbers. The week-before comparison matters: COVID in MN fell 0.30% to 0.21% in the latest
+  week while still being up on 12 weeks ago, and comparing only to the window start hid that.
+- **Hover/tap crosshair + tooltip** listing both series for that week, the same readout on
+  keyboard focus (arrow keys step through weeks), and a collapsed **"Weekly numbers" table**
+  so no value is hover-only. Tooltip text goes in through `textContent`.
+- **Shared y-scale across all three viruses is kept on purpose** (same honesty reason as before:
+  a near-zero RSV series must look flat, not like a mountain). The note under each chart says so,
+  and the summary sentence carries the relative change a flat line cannot show.
+- **Colours:** Minnesota `#3A6E2E` (accent, the series the card is about), US `#968D81` (grey
+  context line). Checked with the dataviz palette validator against the card surface `#FAF7F0`:
+  both clear 3:1 contrast and the pair separates under colour-blind simulation (protan
+  ΔE 15.2). The grey failing the chroma floor is intended for an emphasis chart (one hue + grey).
+  The old US grey `#B9AF9D` was only 2.0:1 against the card.
+- **Series are aligned on `week_end`**, not array position. The old code paired MN and US
+  points by index, so a week missing for one geography would shift that whole line sideways
+  onto the wrong dates. A missing week now breaks the line instead of being drawn as zero.
+- The chart is **drawn after insertion at its real pixel width** (`drawRespChart()`), and
+  redrawn on resize, so text and dots stay crisp rather than stretching with
+  `preserveAspectRatio="none"`. Handlers are assigned (`el.onpointermove = ...`), not added,
+  so redraws never stack listeners.
+- The card-header chip is CDC's own trend call for **Minnesota ED visits** and now says so
+  (`MN ▲ Increasing`, with a title tooltip). Unlabelled, a "No change" beside a falling line
+  read as a verdict on the whole card.
+
 #### Rt constraints (all load-bearing, do not regress them)
 
 1. **Rt measures direction only, never burden.** An Rt below 1 means transmission is shrinking,
@@ -327,6 +422,12 @@ on `data.cdc.gov` the following Friday around 16:00 UTC (the 2026-10-06 run appe
 2026-10-09). A healthy feed therefore reads 3 to 11 days old, which the 14-day window covers
 with slack; a red Rt chip means a week was genuinely missed or the browser got an old answer.
 
+**Observed 2026-10-26: the Rt dataset was empty.** `5dqz-y4ea` returned `count(*) = 0` and
+`max(as_of)` returned `[{}]` after a republish stamped 2026-10-23 16:04 UTC (the column schema
+was intact). The page correctly fell into the `error` state ("Modelled direction unavailable")
+with the burden and severity blocks unaffected. This was a CDC-side outage, not a code fault;
+check the row count before changing anything if the Rt chip is red.
+
 **Two display traps fixed after a false "Stale. Run of Sep 28, 17 days ago" report:**
 - `data.cdc.gov` sends `Last-Modified` but no `Cache-Control`, so browsers may heuristically
   cache query responses. The user's page received the Sep 29 vintage a week after the Oct 6 one
@@ -342,7 +443,9 @@ stale Rt feed, stale ED feed, NHSN down, all three down, Minnesota absent from t
 Minnesota present but not estimated, and a January clock with a fresh feed still reporting flu
 unestimated. A 19-assertion unit sweep over `respRtStatus()` covers all twelve months and the
 stale-versus-seasonal precedence. No console errors and no horizontal page overflow at any
-width.
+width. The rebuilt trend chart was re-checked the same way (320, 390, 430, 1200px against the
+live 2026-10-17 week): chart widths 258 to 368px, no card or page overflow, hover tooltip and
+arrow-key readout both returning the right week's MN and US values, no console errors.
 
 ---
 
