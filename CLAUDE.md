@@ -526,6 +526,25 @@ past it the banner flips to a red STALE / replace-this-section warning. This is 
 knows when to have the featured outbreak swapped out. It is driven off the file's own dates, not
 an assumption that the feed updates forever.
 
+**The line-list fetch uses `cache: 'no-cache'`. Do not remove it.** On 2026-11-09 the user saw
+the STALE banner on one refresh and LIVE on the next. The feed was fine: the newest
+`Date_last_modified` was 2026-11-05, and replaying `dataFreshness()` over every committed
+version of the file since July never found it more than about 6 days old. For STALE to show,
+the browser had to be holding a copy from on or before 2026-10-24, i.e. it reused a saved copy
+instead of asking GitHub. Reproduced in headless Chromium with a server that publishes a newer
+file between two loads: the old code never re-requested the CSV and stayed STALE; with
+`no-cache` the reload sent a conditional request and showed LIVE. `raw.githubusercontent.com`
+answers an unchanged file with a 0-byte 304 (verified), so revalidating every load costs nothing
+when the data has not moved. Same trap and fix as the CDC feeds (see `socrataJSON()`). If a
+false STALE ever recurs after this, the "line list last modified" date in the banner identifies
+which copy the browser had; compare it against the file's git history before changing anything.
+
+**Known gap, not yet fixed:** the line list records fewer deaths than WHO. On 2026-11-03 WHO
+reported 10,668 confirmed cases and 5,198 deaths (CFR 48.7%) for DRC; the line list matches the
+case count exactly but carries only 4,705 DRC deaths (`Outcome == 'Death'`), so the section
+shows a CFR about 4.7 points low. Also note that only about 1,000 of 12,359 records carry a
+`Date_last_modified` at all, so the freshness signal rests on a small subset of rows.
+
 **Verification note:** the Global.health raw CSV is CORS-open and reachable (confirmed HTTP
 200). Every change to this
 section was validated against the live file: a Node aggregation simulation (2,094 confirmed;
