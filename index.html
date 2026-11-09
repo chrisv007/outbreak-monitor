@@ -1055,7 +1055,7 @@ footer a { color: var(--text-secondary); }
     <a href="https://github.com/globaldothealth/outbreak-data/tree/main/Ebola%20BVD" target="_blank">Global.health Ebola BVD 2026 line list</a> (CC BY 4.0) ·
     <a href="https://www.who.int/emergencies/disease-outbreak-news" target="_blank">WHO DON</a> ·
     For situational awareness only — not a clinical resource.
-    <div class="build-timestamp">Dashboard page last modified: 2026-10-26 07:52 AM CDT</div>
+    <div class="build-timestamp">Dashboard page last modified: 2026-11-09 08:29 AM CST</div>
   </div>
 </footer>
 
@@ -1693,7 +1693,13 @@ async function fetchRespRt() {
 //     nationality or travel history.
 //   • Freshness is driven by the file's own most-recent Date_last_modified.
 async function fetchOutbreak(cfg) {
-  const r = await fetch(cfg.linelistUrl);
+  // Always revalidate with the server. Without this a browser can hand back an
+  // old saved copy of the line list on the first load, which made the section
+  // show a false STALE banner (a copy from late October) that cleared on the
+  // very next refresh. Same trap and same fix as the CDC feeds (see socrataJSON).
+  // The server answers an unchanged file with a tiny 304, so this costs nothing
+  // extra when the data has not moved. Do not remove it.
+  const r = await fetch(cfg.linelistUrl, { cache: 'no-cache' });
   if (!r.ok) throw new Error(`Feed ${r.status}`);
   const rows = parseCSV(await r.text());
 
