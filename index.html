@@ -1055,7 +1055,7 @@ footer a { color: var(--text-secondary); }
     <a href="https://github.com/globaldothealth/outbreak-data/tree/main/Ebola%20BVD" target="_blank">Global.health Ebola BVD 2026 line list</a> (CC BY 4.0) ·
     <a href="https://www.who.int/emergencies/disease-outbreak-news" target="_blank">WHO DON</a> ·
     For situational awareness only — not a clinical resource.
-    <div class="build-timestamp">Dashboard page last modified: 2026-11-09 08:29 AM CST</div>
+    <div class="build-timestamp">Dashboard page last modified: 2026-11-09 08:41 AM CST</div>
   </div>
 </footer>
 
@@ -1096,8 +1096,21 @@ const FEATURED_OUTBREAKS = [
                                         // e.g. an American case with travel history to
                                         // Germany is still correctly a DRC case.
     zoneField: 'Health zone',           // sub-country granularity (mostly DRC)
+    admin1Field: 'Location Admin1',     // province, used to say where unallocated
+                                        // deaths (below) occurred
     outcomeField: 'Outcome',            // 'Death' marks a confirmed death
     deathValue: 'death',
+    // Confirmed deaths the source has logged as a batch but not yet matched to an
+    // individual case record or health zone. The source labels them "a ventiler"
+    // (French: "to be allocated") and its own note on every such row reads: "These
+    // are confirmed deaths that occurred at the province's various Treatment Centers;
+    // the data is currently being broken down for classification by health zone."
+    // They are deaths among cases ALREADY counted, so they are added to deaths and
+    // never to cases. Leaving them out undercounted deaths from mid-August on (4,705
+    // vs WHO's 5,198 on 3 Nov). With them, DRC cases and deaths match WHO's published
+    // figures exactly at every DON checkpoint tested (23 Sep, 6 Oct, 20 Oct, 3 Nov).
+    // Matched accent- and case-insensitively, so "à ventiler" also counts.
+    unallocatedDeathStatus: 'a ventiler',
     confirmationDateField: 'Date_confirmation', // drives the "recently confirmed" signal
     lastModifiedField: 'Date_last_modified',    // drives live/stale (file's own dates)
     recentWindowDays: 14,
@@ -1704,8 +1717,14 @@ async function fetchOutbreak(cfg) {
   const rows = parseCSV(await r.text());
 
   const val = (row, field) => (row && field ? (row[field] || '') : '').trim();
-  const isConfirmed = row => val(row, cfg.statusField).toLowerCase() === cfg.confirmedValue;
+  // Status values are compared without accents or case ("à ventiler" == "a ventiler").
+  const plain = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const statusOf = row => plain(val(row, cfg.statusField));
+  const isConfirmed = row => statusOf(row) === cfg.confirmedValue;
   const isDeath = row => val(row, cfg.outcomeField).toLowerCase() === cfg.deathValue;
+  // Confirmed deaths not yet matched to a case record (see unallocatedDeathStatus).
+  const isUnallocatedDeath = row => !!cfg.unallocatedDeathStatus
+    && statusOf(row) === cfg.unallocatedDeathStatus && isDeath(row);
 
   // Feed freshness follows the file's own last-modified column across ALL records
   // (any edit signals an active feed). Dates are normalized first so a malformed
@@ -1725,6 +1744,16 @@ async function fetchOutbreak(cfg) {
     if (!countryMap[c]) countryMap[c] = { name: c, cases: 0, deaths: 0 };
     countryMap[c].cases++;
     if (isDeath(row)) countryMap[c].deaths++;
+  }
+  // Unallocated confirmed deaths: added to their country's deaths, never its cases.
+  // A country seen only through such rows still gets a row (0 cases, CFR shown as
+  // a dash) so no death is silently dropped.
+  const unallocated = rows.filter(isUnallocatedDeath);
+  const provincesOf = list => [...new Set(list.map(row => val(row, cfg.admin1Field)).filter(Boolean))];
+  for (const row of unallocated) {
+    const c = val(row, cfg.countryField) || 'Unspecified location';
+    if (!countryMap[c]) countryMap[c] = { name: c, cases: 0, deaths: 0 };
+    countryMap[c].deaths++;
   }
   const countries = Object.values(countryMap).sort((a, b) => b.cases - a.cases);
 
@@ -1747,6 +1776,11 @@ async function fetchOutbreak(cfg) {
     drilldownCountry = c.name;
     break;
   }
+  // Unallocated deaths have no health zone, so they cannot go in the zone table.
+  // They are reported beside it instead, because they make the zone death rates
+  // in their province read low.
+  const zoneUnallocated = unallocated.filter(
+    row => (val(row, cfg.countryField) || 'Unspecified location') === drilldownCountry);
 
   // Recently-confirmed count — a live activity signal from confirmation dates.
   const cutoff = new Date();
@@ -1762,11 +1796,15 @@ async function fetchOutbreak(cfg) {
     countries,
     zones,
     drilldownCountry,
+    zoneUnallocatedDeaths: zoneUnallocated.length,
+    zoneUnallocatedProvinces: provincesOf(zoneUnallocated),
     latestDate,
     totalRecords: rows.length,
     national: {
       cases: confirmed.length,
-      deaths: confirmed.reduce((s, row) => s + (isDeath(row) ? 1 : 0), 0),
+      deaths: confirmed.reduce((s, row) => s + (isDeath(row) ? 1 : 0), 0) + unallocated.length,
+      unallocatedDeaths: unallocated.length,
+      unallocatedProvinces: provincesOf(unallocated),
       recentConfirmed,
       recentWindowDays: cfg.recentWindowDays
     }
@@ -2825,6 +2863,14 @@ function renderGlobal(results) {
   }
 }
 
+// "Ituri" / "Ituri and North Kivu" / "Ituri, North Kivu and Tshopo", HTML-escaped.
+function listWords(items) {
+  const xs = (items || []).map(esc);
+  return xs.length <= 1 ? (xs[0] || '') : xs.slice(0, -1).join(', ') + ' and ' + xs[xs.length - 1];
+}
+// " in Ituri" when places are known, otherwise nothing.
+const inPlaces = items => (items && items.length ? ' in ' + listWords(items) : '');
+
 function renderOutbreakData(cfg, data, idx) {
   const target = $(`outbreakBody-${idx}`);
   const countries = data?.countries || [];
@@ -2883,9 +2929,17 @@ function renderOutbreakData(cfg, data, idx) {
   if (zones.length && data.drilldownCountry) {
     const maxZone = zones[0].cases || 1;
     const zoneRows = zones.map(z => rowFor(z, maxZone)).join('');
+    const zu = data.zoneUnallocatedDeaths || 0;
+    const zoneNote = zu > 0
+      ? `<p style="font-size:0.74rem;color:var(--text-secondary);margin:6px 0 8px">
+           Not in this table: <strong>${fmt(zu)}</strong> confirmed death${zu !== 1 ? 's' : ''} at treatment centres${inPlaces(data.zoneUnallocatedProvinces)}
+           that the source has not yet assigned to a health zone. They are counted in the country total above,
+           so death rates for ${data.zoneUnallocatedProvinces.length ? 'zones in ' + listWords(data.zoneUnallocatedProvinces) : 'the affected zones'} read low here.</p>`
+      : '';
     zoneBlock = `
       <details class="zone-drill" open>
         <summary>Health-zone breakdown — ${esc(data.drilldownCountry)} (${zones.length} zone${zones.length !== 1 ? 's' : ''})</summary>
+        ${zoneNote}
         <table class="country-table">
           <thead><tr><th>Health Zone</th><th>Confirmed Cases</th><th>Deaths (CFR)</th><th></th></tr></thead>
           <tbody>${zoneRows}</tbody>
@@ -2894,6 +2948,11 @@ function renderOutbreakData(cfg, data, idx) {
   }
 
   const natCfr = nat.cases > 0 ? ((nat.deaths / nat.cases) * 100).toFixed(1) + '%' : '—';
+  const nu = nat.unallocatedDeaths || 0;
+  const unallocatedNote = nu > 0
+    ? `Deaths include <strong>${fmt(nu)}</strong> confirmed death${nu !== 1 ? 's' : ''} at treatment centres${inPlaces(nat.unallocatedProvinces)}
+       that the source has logged but not yet matched to individual cases; they are added to deaths, not cases. `
+    : '';
 
   target.innerHTML = `
     <div class="country-table-wrap">
@@ -2902,6 +2961,7 @@ function renderOutbreakData(cfg, data, idx) {
         <strong>${fmt(nat.cases)}</strong> confirmed cases · <strong>${fmt(nat.deaths)}</strong> deaths · CFR <strong>${natCfr}</strong>
         across ${countries.length} countr${countries.length !== 1 ? 'ies' : 'y'}.
         ${nat.recentConfirmed > 0 ? `<strong>${fmt(nat.recentConfirmed)}</strong> newly confirmed in the last ${nat.recentWindowDays} days. ` : ''}
+        ${unallocatedNote}
         Confirmed cases only (suspected, probable and discarded records are excluded).
         Country attribution follows case location, not nationality or travel history.
         Pathogen: <em>${cfg.pathogenDesc}</em>. Tracking started ${fmtDate(cfg.trackingStarted)}.

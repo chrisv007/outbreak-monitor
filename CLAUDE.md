@@ -491,7 +491,26 @@ trailing spaces and a lowercase `Health zone`):
 - **Confirmed only in headline totals.** Filter to `Case_status == 'confirmed'`. The file also
   carries suspected, probable, discarded and contact records; `suspected` alone is ~900 of
   ~3,200 rows, so folding it into the total would badly distort it. Totals count confirmed
-  records; deaths count confirmed records with `Outcome == 'Death'`.
+  records; deaths count confirmed records with `Outcome == 'Death'` **plus** the unallocated
+  confirmed deaths described next.
+- **Unallocated confirmed deaths (`Case_status = 'a ventiler'`) count toward deaths, never
+  cases.** Since mid-August the source has logged a batch of confirmed deaths at Ituri
+  treatment centres that it has not yet matched to a case record or health zone: no age, sex,
+  zone or confirmation date, `Outcome = Death`, and a `Location_comment` on every row saying they
+  are "confirmed deaths that occurred at the province's various Treatment Centers ... being
+  broken down for classification by health zone." There were 493 on 2026-11-05. They are deaths
+  among cases *already* counted: WHO's confirmed-case total equals the confirmed records alone,
+  so adding these rows as cases would double count. Leaving them out entirely undercounted
+  deaths (4,705 vs WHO's 5,198, CFR shown about 4.7 points low). With them, DRC cases **and**
+  deaths match WHO's published figures exactly at every DON checkpoint tested (as of 23 Sep:
+  7,890 / 3,799; 6 Oct: 8,728 / 4,205; 20 Oct: 9,704 / 4,687; 3 Nov: 10,668 / 5,198). Config
+  key `unallocatedDeathStatus`; the status is matched without accents or case (`à ventiler`
+  also counts). They go into the country death total; because they have no zone, the zone
+  table carries a note *above* it that names the count and says zone death rates in that
+  province read low. If the source later allocates them, the rows should disappear and the
+  case records gain `Outcome = Death`, so totals stay correct with no code change. One bad
+  upload (2026-10-07) briefly doubled these rows and also inflated the case count; it was
+  corrected within a day, so it is not special-cased.
 - **Country totals are grouped DYNAMICALLY from the data**, keyed on `Location_Admin0`. There
   is no hardcoded country list, so a new country (e.g. the single confirmed France import)
   surfaces on its own with no code change. Sorted by case count.
@@ -539,11 +558,9 @@ when the data has not moved. Same trap and fix as the CDC feeds (see `socrataJSO
 false STALE ever recurs after this, the "line list last modified" date in the banner identifies
 which copy the browser had; compare it against the file's git history before changing anything.
 
-**Known gap, not yet fixed:** the line list records fewer deaths than WHO. On 2026-11-03 WHO
-reported 10,668 confirmed cases and 5,198 deaths (CFR 48.7%) for DRC; the line list matches the
-case count exactly but carries only 4,705 DRC deaths (`Outcome == 'Death'`), so the section
-shows a CFR about 4.7 points low. Also note that only about 1,000 of 12,359 records carry a
-`Date_last_modified` at all, so the freshness signal rests on a small subset of rows.
+**Thin freshness signal (noted, not changed):** only about 1,000 of 12,359 records carry a
+`Date_last_modified` at all, so the freshness banner rests on a small subset of rows. It has
+tracked the file's commit dates closely so far (never more than about a day behind since July).
 
 **Verification note:** the Global.health raw CSV is CORS-open and reachable (confirmed HTTP
 200). Every change to this
