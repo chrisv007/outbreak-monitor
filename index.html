@@ -1051,11 +1051,11 @@ footer a { color: var(--text-secondary); }
     Data sources: <a href="https://data.cdc.gov/NNDSS/NNDSS-Weekly-Data/x9gk-5huc" target="_blank">CDC NNDSS</a> ·
     <a href="https://data.cdc.gov/d/rdmq-nq56" target="_blank">CDC NSSP ED visits</a> ·
     <a href="https://data.cdc.gov/d/ua7e-t2fy" target="_blank">CDC NHSN hospital respiratory</a> ·
-    <a href="https://data.cdc.gov/d/5dqz-y4ea" target="_blank">CDC Epidemic Trends and Rt</a> ·
+    <a href="https://data.cdc.gov/d/ahfs-x44r" target="_blank">CDC Epidemic Trends and Rt</a> ·
     <a href="https://github.com/globaldothealth/outbreak-data/tree/main/Ebola%20BVD" target="_blank">Global.health Ebola BVD 2026 line list</a> (CC BY 4.0) ·
     <a href="https://www.who.int/emergencies/disease-outbreak-news" target="_blank">WHO DON</a> ·
     For situational awareness only — not a clinical resource.
-    <div class="build-timestamp">Dashboard page last modified: 2026-11-09 08:41 AM CST</div>
+    <div class="build-timestamp">Dashboard page last modified: 2026-11-16 08:01 AM CST</div>
   </div>
 </footer>
 
@@ -1498,7 +1498,7 @@ async function fetchCDC() {
 //
 //   BURDEN    rdmq-nq56  NSSP  share of all ED visits           (observed)
 //   SEVERITY  ua7e-t2fy  NHSN  hospital admissions per 100k     (observed)
-//   DIRECTION 5dqz-y4ea  CFA   modeled Rt, nowcast              (modeled)
+//   DIRECTION ahfs-x44r  CFA   modeled Rt, nowcast              (modeled)
 //
 // NSSP and the Rt model share an upstream data system, so they are burden versus
 // direction, NOT two independent confirmations of each other. NHSN is a genuinely
@@ -1587,7 +1587,7 @@ async function socrataJSON(datasetId, params) {
   const url = `https://data.cdc.gov/resource/${datasetId}.json?` +
     new URLSearchParams(params).toString();
   // data.cdc.gov sends Last-Modified but no Cache-Control, which lets a browser
-  // reuse an old response under heuristic caching. An old max(as_of) or
+  // reuse an old response under heuristic caching. An old max(origin_date) or
   // max(week_end) answer would show a past week and could trip a false STALE
   // banner, so always go back to the server for these small queries.
   const r = await fetch(url, { cache: 'no-cache' });
@@ -1650,46 +1650,86 @@ async function fetchRespHosp() {
   return { weekEnd, rows };
 }
 
-// ── Direction: CDC Epidemic Trends and Rt (5dqz-y4ea) ──
-// Weekly vintages (as_of), each carrying a 29-day daily series ending on the
-// vintage date. Staying inside one vintage keeps every value on one side of the
-// 2026-06-01 methods break instead of silently stitching two methods together.
+// ── Direction: CDC Epidemic Trends and Rt (ahfs-x44r) ──
+// This used to read 5dqz-y4ea (state-level only). That dataset was emptied on
+// 2026-10-23 and has stayed at zero rows through every republish since, while CDC
+// publishes the same hierarchical-GAM estimates weekly in ahfs-x44r, which holds
+// national, state and sub-state (HSA) rows in one table. Field names and filters
+// below were read off live ahfs-x44r responses (see CLAUDE.md):
+//   origin_date   the modelling run (was as_of). TEXT, "2026-11-11", so filters
+//                 take the bare date, not the T00:00:00.000 suffix
+//   target_date   the date the estimate is for (was date). Also TEXT
+//   horizon       target_date minus origin_date, 0 or negative today
+//   estimate_level  national / state / HSA. Only national and state are read;
+//                 HSA rows (3.7M of 3.77M) would multiply every state otherwise
+//   state_name    full state name, or "United States" on the national row
+//   lower_95, upper_95   the 95% interval (were lower, upper, interval_width)
+// Staying inside one run keeps every value on one side of the 2026-06-01 methods
+// break instead of silently stitching two methods together.
 //
-// The seasonal-pause signal is read from the feed, not assumed: rows for flu and
-// RSV keep publishing all summer, they just carry category "Not Estimated" with
-// no median. So "is this pathogen currently estimated" and "is this feed still
-// publishing" are two independent questions, which is exactly what keeps an
-// expected summer pause from firing a stale-feed alarm.
-async function fetchRespRt() {
-  const vintageRows = await socrataJSON('5dqz-y4ea', { '$select': 'max(as_of) as latest' });
-  const asOf = isoDay(vintageRows?.[0]?.latest);
-  if (!asOf) throw new Error('no as_of published in 5dqz-y4ea');
+// The seasonal-pause signal is read from the feed, not assumed: unestimated rows
+// keep publishing with category "Not Estimated" and no median. So "is this
+// pathogen currently estimated" and "is this feed still publishing" are two
+// independent questions, which is what keeps an expected summer pause from
+// firing a stale-feed alarm.
+const RT_DATASET = 'ahfs-x44r';
 
-  const [dateRows, lastEstimated] = await Promise.all([
-    socrataJSON('5dqz-y4ea', {
-      '$select': 'max(date) as latest_date',
-      '$where': `as_of='${asOf}T00:00:00.000'`
+async function fetchRespRt() {
+  const [vintageRows, lastEstimated] = await Promise.all([
+    // Newest run that carries state rows. Filtering on state stops a run that
+    // is still part-uploaded (HSA rows only) from being picked as the latest.
+    socrataJSON(RT_DATASET, {
+      '$select': 'max(origin_date) as latest',
+      '$where': "estimate_level='state'"
     }),
-    // Last date each disease carried a real estimate. median IS NOT NULL is the
-    // filter that separates a published-but-unestimated row from a real value.
-    socrataJSON('5dqz-y4ea', {
-      '$select': 'disease, max(date) as last_estimated',
-      '$where': 'median IS NOT NULL',
+    // Last date each disease carried a real state estimate. median IS NOT NULL
+    // is the filter that separates a published-but-unestimated row from a value.
+    socrataJSON(RT_DATASET, {
+      '$select': 'disease, max(target_date) as last_estimated',
+      '$where': "estimate_level='state' AND median IS NOT NULL",
       '$group': 'disease'
     })
   ]);
 
+  const asOf = isoDay(vintageRows?.[0]?.latest);
+  if (!asOf) throw new Error(`CDC's Rt dataset (${RT_DATASET}) returned no modelling runs`);
+
+  // Newest estimate date in that run. horizon <= 0 keeps it on an observed date
+  // even if CDC later adds forecast rows (positive horizons) to the same table.
+  const dateRows = await socrataJSON(RT_DATASET, {
+    '$select': 'max(target_date) as latest_date',
+    '$where': `origin_date='${asOf}' AND estimate_level in('state','national') AND horizon <= 0`
+  });
   const estDate = isoDay(dateRows?.[0]?.latest_date) || asOf;
-  const rows = await socrataJSON('5dqz-y4ea', {
-    '$select': 'disease,state,median,lower,upper,interval_width,p_growing,category',
-    '$where': `as_of='${asOf}T00:00:00.000' AND date='${estDate}T00:00:00.000'`,
+
+  const raw = await socrataJSON(RT_DATASET, {
+    '$select': 'estimate_level,disease,state_name,median,lower_95,upper_95,p_growing,category',
+    '$where': `origin_date='${asOf}' AND target_date='${estDate}' ` +
+              `AND estimate_level in('state','national')`,
     '$limit': '500'
+  });
+
+  // The national row is split off here so it can never be counted as a state.
+  // "Data Unavailable" means the jurisdiction does not share data at that level
+  // (CDC's wording), which is "no data", not "the model declined", so those rows
+  // are dropped and the state reads as absent. Today it only occurs on HSA rows.
+  const rows = [];
+  const national = {};
+  (raw || []).forEach(r => {
+    if (/^data unavailable$/i.test(String(r.category || '').trim())) return;
+    const row = {
+      disease: r.disease, state: r.state_name,
+      median: r.median, lower: r.lower_95, upper: r.upper_95,
+      p_growing: r.p_growing, category: r.category
+    };
+    if (r.estimate_level === 'national') national[r.disease] = row;
+    else if (r.estimate_level === 'state') rows.push(row);
   });
 
   const lastByDisease = {};
   (lastEstimated || []).forEach(r => { lastByDisease[r.disease] = isoDay(r.last_estimated); });
 
-  return { asOf, estDate, rows, lastByDisease };
+  return { asOf, estDate, rows, national, lastByDisease };
 }
 
 // ════════════════════════════════════════════════════════
@@ -2158,11 +2198,13 @@ function processResp(edRes, hospRes, rtRes) {
     else hospByAbbr[j] = r;
   });
 
-  // ── Rt: index by disease then state ──
+  // ── Rt: index by disease then state. The national row arrives separately
+  //    (rt.national) so it never inflates the state counts below. ──
   const rtByDisease = {};
   (rt?.rows || []).forEach(r => {
     (rtByDisease[r.disease] = rtByDisease[r.disease] || {})[r.state] = r;
   });
+  const rtNational = rt?.national || {};
 
   // The state roster comes from the ED feed (51 jurisdictions) so the table is a
   // consistent set. NHSN additionally covers five territories; they are not shown
@@ -2231,6 +2273,7 @@ function processResp(edRes, hospRes, rtRes) {
 
     const mn = states.find(s => s.isMn) || null;
     const mnRt = rtStates['Minnesota'] || null;
+    const usRt = rtNational[p.rtDisease] || null;
 
     // National direction roll-up. A count of jurisdictions by modeled trend, which
     // is a statement about direction across places, never about case volume.
@@ -2259,9 +2302,16 @@ function processResp(edRes, hospRes, rtRes) {
       rtMn: mnRt ? numOrNull(mnRt.median) : null,
       rtMnLower: mnRt ? numOrNull(mnRt.lower) : null,
       rtMnUpper: mnRt ? numOrNull(mnRt.upper) : null,
-      rtMnInterval: mnRt ? numOrNull(mnRt.interval_width) : null,
       rtMnP: mnRt ? numOrNull(mnRt.p_growing) : null,
       rtMnCategory: mnRt ? (mnRt.category || null) : null,
+      // National modelled direction, so Rt is set against the US like every
+      // other metric on the card. Present-but-null is "not estimated this run".
+      rtUsPresent: !!usRt,
+      rtUs: usRt ? numOrNull(usRt.median) : null,
+      rtUsLower: usRt ? numOrNull(usRt.lower) : null,
+      rtUsUpper: usRt ? numOrNull(usRt.upper) : null,
+      rtUsP: usRt ? numOrNull(usRt.p_growing) : null,
+      rtUsCategory: usRt ? (usRt.category || null) : null,
       rtGrowingStates: growing,
       rtEstimatedStates: estimatedStates,
       lastEstimated,
@@ -2578,6 +2628,17 @@ function respRtBlock(p) {
     ? ` Those estimates predate the <strong>${fmtDate(RT_METHOD_CHANGE_DATE)}</strong> change in modelling method (EpiNow2 to a hierarchical GAM), so they are not directly comparable to current-method values.`
     : '';
 
+  // The national figure, shown whenever the run is active so Minnesota's
+  // direction always sits beside the US one, as every other metric here does.
+  const usLine = !p.rtUsPresent ? ''
+    : p.rtUs === null
+      ? `<div class="resp-rt-meta">United States · <strong>not estimated</strong> this run</div>`
+      : `<div class="resp-rt-meta">United States · Rt <strong>${respRt(p.rtUs)}</strong>${
+          (p.rtUsLower !== null && p.rtUsUpper !== null)
+            ? ` (95% interval ${respRt(p.rtUsLower)} – ${respRt(p.rtUsUpper)})` : ''
+        } · ${esc(p.rtUsCategory || 'category not given')}${
+          p.rtUsP !== null ? ` · ${Math.round(p.rtUsP * 100)}% probability of growth` : ''}</div>`;
+
   let body;
 
   if (st.kind === 'error') {
@@ -2608,7 +2669,7 @@ function respRtBlock(p) {
     body = `<div class="resp-state-note resp-state-none">
         <span><strong>No Minnesota row in this modelling run.</strong>
         Other states are estimated; Minnesota is absent from the feed, which is not the same as the model declining to estimate it.</span>
-      </div>`;
+      </div>${usLine}`;
   } else if (p.rtMn === null) {
     // Row present, value withheld. This is the model declining, and it says so.
     body = `<div class="resp-state-note resp-state-none">
@@ -2617,20 +2678,21 @@ function respRtBlock(p) {
         Rt is withheld for a state when ED visit volume is too low, an anomaly is detected, or the model fails its reliability checks.
         That is different from no data.
         ${p.rtEstimatedStates} of ${p.states.length} jurisdictions are estimated this run.</span>
-      </div>`;
+      </div>${usLine}`;
   } else {
+    // lower_95 / upper_95 are by the dataset's own definition the 95% interval.
     const ci = (p.rtMnLower !== null && p.rtMnUpper !== null)
       ? `${respRt(p.rtMnLower)} – ${respRt(p.rtMnUpper)}` : null;
-    const iv = p.rtMnInterval !== null ? Math.round(p.rtMnInterval * 100) + '%' : '';
     body = `
       <div class="resp-rt-headline">
         <span class="resp-rt-num">${respRt(p.rtMn)}</span>
-        ${ci ? `<span class="resp-rt-ci">${iv} interval ${ci}</span>` : ''}
+        ${ci ? `<span class="resp-rt-ci">95% interval ${ci}</span>` : ''}
       </div>
       <div class="resp-rt-meta">
         Minnesota · <strong>${esc(p.rtMnCategory || 'category not given')}</strong>${
           p.rtMnP !== null ? ` · ${Math.round(p.rtMnP * 100)}% probability of growth` : ''}
       </div>
+      ${usLine}
       <div class="resp-rt-meta">
         ${p.rtGrowingStates} of ${p.rtEstimatedStates} estimated jurisdictions modelled as growing
       </div>`;
