@@ -221,9 +221,9 @@ counting, on three deliberately different axes:
 |---|---|---|
 | **Burden** (observed) | `rdmq-nq56` NSSP ED visit trajectories | Share of all emergency department visits attributable to each pathogen, weekly, by state and sub-state region, with the feed's own trend direction |
 | **Severity** (observed) | `ua7e-t2fy` NHSN weekly hospital respiratory data | New confirmed admissions per 100k, percent of inpatient beds occupied, and week-over-week change, weekly, by jurisdiction |
-| **Direction** (modelled) | `5dqz-y4ea` CDC Epidemic Trends and Rt | Modelled Rt with uncertainty, trend category and probability of growth, nowcast so it leads the observed series |
+| **Direction** (modelled) | `ahfs-x44r` CDC Epidemic Trends and Rt (national, state, local) | Modelled Rt with uncertainty, trend category and probability of growth, nowcast so it leads the observed series |
 
-`rdmq-nq56` and `5dqz-y4ea` are both derived from the **same upstream NSSP emergency-department
+`rdmq-nq56` and `ahfs-x44r` are both derived from the **same upstream NSSP emergency-department
 data**, so they are **not independent confirmations of each other**. The page states this
 explicitly. Read them as burden versus direction, never as two sources agreeing. NHSN is a
 genuinely separate collection (hospitals reporting their own admissions), so it is the one real
@@ -269,18 +269,33 @@ directions. The rest are reporting states and must not be rendered as if they we
 | `pctconfc19inptbeds`, `pctconffluinptbeds`, `pctconfrsvinptbeds` | Percent of inpatient beds occupied |
 | `totalconfc19newadmpctchg`, `totalconfflunewadmpctchg`, `totalconfrsvnewadmpctchg` | Week-over-week percent change |
 
-**`5dqz-y4ea` (Epidemic Trends and Rt).**
+**`ahfs-x44r` (Epidemic Trends and Rt: national, state and local).** Read off live responses on
+2026-11-16. This replaced `5dqz-y4ea` (state-only), which CDC emptied; see "The Rt dataset moved"
+below.
 
 | Field | Meaning |
 |---|---|
-| `as_of` | Modelling-run vintage, `calendar_date`. New vintage weekly. |
-| `date` | Estimate date. **Daily, not weekly.** One vintage carries a 29-day series ending on `as_of`. |
+| `origin_date` | Modelling-run vintage (the old `as_of`). **Text, not `calendar_date`**: `"2026-11-11"`. Weekly. History starts at the 2026-09-29 run. |
+| `target_date` | Estimate date (the old `date`). **Text**, daily. A state run covers about 8 weeks ending on `origin_date`. |
+| `horizon` | Number, `target_date` minus `origin_date`. 0 down to about -55 today; 0 is the newest estimate. Positive values would be forecasts; none exist yet. |
+| `estimate_level` | `national` (1 row per disease per date), `state` (51), `HSA` (about 800 local areas, 3.7M of the 3.77M rows). **Only `national` and `state` are read.** |
+| `state_name` | **Full state name** (`Minnesota`), or `United States` on the national row |
+| `state_code` | Two-digit FIPS, `00` on the national row |
 | `disease` | `COVID-19`, `Influenza`, `RSV` |
-| `state` | **Full state name** (`Minnesota`), 51 jurisdictions, **no national row** |
-| `median`, `lower`, `upper` | Rt point estimate and interval bounds |
-| `interval_width` | `0.95`, or absent when not estimated |
+| `median`, `lower_95`, `upper_95` | Rt point estimate and 95% interval bounds (the old `lower`, `upper`, `interval_width` = 0.95) |
 | `p_growing` | Probability of epidemic growth, 0 to 1 |
-| `category` | `Growing`, `Likely Growing`, `Not Changing`, `Likely Declining`, `Declining`, `Not Estimated` |
+| `category` | `Growing`, `Likely Growing`, `Not Changing`, `Likely Declining`, `Declining`, `Not Estimated`, **and `Data Unavailable`** |
+| `county_name`, `county_code`, `hsa_name`, `hsa_code` | HSA rows only |
+
+`Data Unavailable` is not in the dataset's own column description but is in the data (1.0M rows).
+CDC's methods page defines it as a jurisdiction that does not share data at that geographic
+level. That is "no data", not "the model declined", so `fetchRespRt()` drops those rows and the
+state reads as absent. Today it occurs only on HSA rows.
+
+**The national row is new** (the old dataset had none). It is split off in `fetchRespRt()` and
+shown as a "United States" line under Minnesota's Rt; it must never be counted in the "N of M
+jurisdictions modelled as growing" tally. It can itself be `Not Estimated` (national RSV was, on
+the 2026-11-04 run).
 
 **Geography vocabularies differ and must be reconciled.** NSSP and Rt both use full state
 names; NHSN uses postal abbreviations. `STATE_ABBR` in `index.html` is what joins them. Without
@@ -299,16 +314,21 @@ GET rdmq-nq56.json?$where=week_end='<latest>T00:00:00.000' AND trend_source in('
 GET ua7e-t2fy.json?$select=max(weekendingdate) as latest
 GET ua7e-t2fy.json?$where=weekendingdate='<latest>T00:00:00.000'
 
-# Rt: latest vintage, its newest estimate date, and the per-disease last real estimate
-GET 5dqz-y4ea.json?$select=max(as_of) as latest
-GET 5dqz-y4ea.json?$select=max(date) as latest_date&$where=as_of='<latest>T00:00:00.000'
-GET 5dqz-y4ea.json?$select=disease, max(date) as last_estimated&$where=median IS NOT NULL&$group=disease
-GET 5dqz-y4ea.json?$where=as_of='<latest>T00:00:00.000' AND date='<latest_date>T00:00:00.000'
+# Rt: latest vintage and the per-disease last real estimate (in parallel), then the
+# vintage's newest observed date, then that date's national + state rows
+GET ahfs-x44r.json?$select=max(origin_date) as latest&$where=estimate_level='state'
+GET ahfs-x44r.json?$select=disease, max(target_date) as last_estimated&$where=estimate_level='state' AND median IS NOT NULL&$group=disease
+GET ahfs-x44r.json?$select=max(target_date) as latest_date&$where=origin_date='<latest>' AND estimate_level in('state','national') AND horizon <= 0
+GET ahfs-x44r.json?$select=estimate_level,disease,state_name,median,lower_95,upper_95,p_growing,category&$where=origin_date='<latest>' AND target_date='<latest_date>' AND estimate_level in('state','national')&$limit=500
 ```
 
-`calendar_date` filters need the full `T00:00:00.000` suffix. The
+`calendar_date` filters (NSSP, NHSN) need the full `T00:00:00.000` suffix. The Rt dates are
+**text**, so they take the bare date; the suffix would match nothing. The
 `$where=median IS NOT NULL` grouped query is the seasonality signal, read from the data rather
-than assumed. See below.
+than assumed. See below. The two full-table aggregations each take about 2 to 2.6 seconds on the
+3.7M-row table, which is why they run in parallel; the run lookup filters on `state` so a run
+that is still part-uploaded (HSA rows only) is not picked, and `horizon <= 0` keeps the estimate
+on an observed date if CDC ever adds forecast rows.
 
 #### Quirks and design rules
 
@@ -380,8 +400,16 @@ what it showed. It was rebuilt so it reads without decoding:
    `Growing`. So **"is this feed still publishing" and "is this pathogen currently estimated"
    are two independent questions**, and reading them separately is what keeps a normal summer
    from firing a stale-feed alarm. Do not implement the off-season as "rows are missing".
-   - The last real flu and RSV estimate is **2026-05-26** (`max(date)` where `median IS NOT
-     NULL`), not the 29 May date quoted in some briefs.
+   - **This was observed on the old `5dqz-y4ea` dataset.** `ahfs-x44r` only begins with the
+     2026-09-29 run, so its summer behaviour has not been seen yet. So far it matches: every run
+     carries all 51 state rows for every disease, with unestimated states as `Not Estimated` rows
+     rather than missing ones. **Re-check in June 2027** that flu and RSV keep publishing as
+     `Not Estimated` rather than dropping out. If they drop out, the code still lands on
+     `paused-seasonal` outside core season, but the card text ("reporting ... as Not Estimated")
+     would need rewording.
+   - The last real flu and RSV estimate in the old dataset was **2026-05-26**, not the 29 May
+     date quoted in some briefs. That history did not carry over: in `ahfs-x44r` the per-disease
+     `max(target_date)` currently reads the newest run for all three.
    - **The estimation window was read off the feed, not assumed.** Grouping non-null medians by
      month returns **September through May** in both the 2024-25 and 2025-26 seasons, with June,
      July and August empty. `RT_SEASON_MONTHS` encodes that.
@@ -392,11 +420,13 @@ what it showed. It was rebuilt so it reads without decoding:
 3. **"Not estimated" is not "no data".** Rt is withheld for a state when ED visit volume is too
    low, an anomaly is detected, or the model fails reliability checks. A row present with a null
    median renders as "not estimated"; a location absent from the feed renders as "no data".
-   Iowa is the live example on the current vintage. Keep the two distinct in card and table.
+   Alabama, Delaware and Louisiana (all three diseases) are the live examples on the 2026-11-11
+   run. Keep the two distinct in card and table. `Data Unavailable` belongs on the "no data" side.
 4. **Methods break on 2026-06-01** (EpiNow2 replaced by a hierarchical GAM). The section stays
-   strictly inside one `as_of` vintage, so no displayed series spans the seam. Because the last
-   flu and RSV estimate (2026-05-26) predates it, the off-season card annotates that those
-   values came from the previous method and are not comparable to current-method numbers.
+   strictly inside one `origin_date` vintage, so no displayed series spans the seam. The seam
+   note fires when the last estimate predates 2026-06-01. With `ahfs-x44r`, whose history starts
+   in September 2026, it cannot fire unless CDC backfills older EpiNow2 runs into it; the check is
+   kept as a guard for that case.
 
 #### Freshness
 
@@ -409,7 +439,7 @@ the others. Each compares the feed's own latest date against the viewer's clock 
 | State | Condition | Rendering |
 |---|---|---|
 | `error` | Feed could not be read | Neutral note; burden blocks unaffected |
-| `stale` | No new `as_of` vintage inside the window | Red. A feed fault, explicitly *not* a seasonal pause |
+| `stale` | No new `origin_date` vintage inside the window | Red. A feed fault, explicitly *not* a seasonal pause |
 | `active` | Pathogen has real estimates in the current vintage | Rt value, interval, category, growth probability |
 | `paused-seasonal` | Feed fresh, pathogen unestimated, seasonal pathogen outside core season | Calm amber "off-season, not currently estimated" |
 | `paused-unexpected` | Feed fresh, pathogen unestimated, but in core season or year-round (COVID-19) | Red, flagged as not the usual pause |
@@ -417,16 +447,28 @@ the others. Each compares the feed's own latest date against the viewer's clock 
 Feed staleness outranks everything, including an active estimate. A year-round pathogen never
 receives the calm seasonal treatment.
 
-**Publication cadence (checked 2026-10-16):** the Rt `as_of` is a Monday and the vintage lands
-on `data.cdc.gov` the following Friday around 16:00 UTC (the 2026-10-06 run appeared
-2026-10-09). A healthy feed therefore reads 3 to 11 days old, which the 14-day window covers
-with slack; a red Rt chip means a week was genuinely missed or the browser got an old answer.
+**Publication cadence (checked 2026-11-16 on `ahfs-x44r`):** runs so far are dated 2026-09-29,
+10-06, 10-13, 10-20, 10-27 (Tuesdays), then 11-04 and 11-11 (Wednesdays). The 2026-11-11 run
+landed on `data.cdc.gov` on Friday 2026-11-13 around 17:50 UTC. A healthy feed therefore reads
+about 2 to 9 days old, which the 14-day window covers with slack; a red Rt chip means a week was
+genuinely missed or the browser got an old answer. (On the old `5dqz-y4ea`, `as_of` was a Monday
+and landed the following Friday around 16:00 UTC.)
 
-**Observed 2026-10-26: the Rt dataset was empty.** `5dqz-y4ea` returned `count(*) = 0` and
-`max(as_of)` returned `[{}]` after a republish stamped 2026-10-23 16:04 UTC (the column schema
-was intact). The page correctly fell into the `error` state ("Modelled direction unavailable")
-with the burden and severity blocks unaffected. This was a CDC-side outage, not a code fault;
-check the row count before changing anything if the Rt chip is red.
+**The Rt dataset moved: `5dqz-y4ea` emptied, `ahfs-x44r` replaced it (fixed 2026-11-16).**
+On 2026-10-26 `5dqz-y4ea` returned `count(*) = 0` and `max(as_of)` returned `[{}]` after a
+republish stamped 2026-10-23 16:04 UTC, with the column schema intact. The page fell into the
+`error` state as designed, and at first this looked like a short CDC-side outage. It was not. On
+2026-11-16 the dataset was still at zero rows after a further republish on 2026-11-13, and the
+page's Rt chip read "Unavailable. no as_of published in 5dqz-y4ea". Meanwhile `ahfs-x44r`
+(created 2026-10-01, the dataset `5dqz-y4ea`'s own description points to "for sub-state
+estimates") had published a new run every week from 2026-09-29 to 2026-11-11 with the same
+hierarchical-GAM estimates at national, state and HSA level. CDC's public Rt page names neither
+dataset, so this was read off the datasets themselves, not an announcement. The fetch now reads
+`ahfs-x44r`; there is no fallback to `5dqz-y4ea`, since mixing two schemas for a dataset that
+has served nothing for weeks would add risk for no benefit. **If the Rt chip goes red again:**
+check `count(*)` and `max(origin_date)` on `ahfs-x44r` first, then check whether CDC has started
+another dataset (search the `data.cdc.gov` catalogue for "Epidemic Trends and Rt") before
+changing code. The thrown error now says in words which dataset returned nothing.
 
 **Two display traps fixed after a false "Stale. Run of Sep 28, 17 days ago" report:**
 - `data.cdc.gov` sends `Last-Modified` but no `Cache-Control`, so browsers may heuristically
@@ -442,7 +484,13 @@ headless Chromium at 320, 390, 430 and 1200px against live payloads, plus forced
 stale Rt feed, stale ED feed, NHSN down, all three down, Minnesota absent from the Rt feed,
 Minnesota present but not estimated, and a January clock with a fresh feed still reporting flu
 unestimated. A 19-assertion unit sweep over `respRtStatus()` covers all twelve months and the
-stale-versus-seasonal precedence. No console errors and no horizontal page overflow at any
+stale-versus-seasonal precedence. The move to `ahfs-x44r` was checked the same way (320, 390,
+430, 1200px against the live 2026-11-11 run: Minnesota COVID 1.12, flu 1.10, RSV 1.51, the US
+line beside each, "37 of 48" growing for COVID matching a hand count of the state rows with the
+national row excluded), plus forced cases served from captured live responses: the dataset
+emptied (plain-language error, burden unaffected), national RSV `Not Estimated`, Minnesota
+`Not Estimated` ("not est.") versus `Data Unavailable` ("no data"), and flu and RSV unestimated
+in November (red, not the seasonal pause). No console errors, no page overflow. No console errors and no horizontal page overflow at any
 width. The rebuilt trend chart was re-checked the same way (320, 390, 430, 1200px against the
 live 2026-10-17 week): chart widths 258 to 368px, no card or page overflow, hover tooltip and
 arrow-key readout both returning the right week's MN and US values, no console errors.
@@ -624,8 +672,8 @@ careful design for a problem that should not have been accepted in the first pla
 
 When the same datasets were finally curled, the guesses turned out to be wrong in ways the
 probing could not have recovered from. The ED feed is wide rather than long, its influenza
-smoothed column is named `percent_visits_smoothed_1`, the Rt feed is daily rather than weekly
-and has no national row, and, most importantly, the seasonal pause is expressed as rows that
+smoothed column is named `percent_visits_smoothed_1`, the Rt feed (then `5dqz-y4ea`) is daily
+rather than weekly and had no national row, and, most importantly, the seasonal pause is expressed as rows that
 keep publishing with `category = "Not Estimated"` rather than as rows going missing, which is
 the opposite of what the code was built to detect. No amount of runtime binding finds a
 behaviour the design never anticipated.
