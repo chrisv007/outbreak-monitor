@@ -630,6 +630,41 @@ GET https://www.who.int/api/news/diseaseoutbreaknews?$top=20&$orderby=Publicatio
 
 ---
 
+## Page Loading (all sections)
+
+**Every network request goes through `fetchFeed()`. Do not call `fetch()` directly.** It gives
+each attempt a time limit (`FEED_TIMEOUT_MS`, 30 s, covering the response body as well as the
+headers), retries once after `FEED_RETRY_DELAY_MS` when a request fails outright (no connection,
+or HTTP 5xx), does not retry a timeout, and turns each failure into a plain sentence such as
+"The WHO API took longer than 30 seconds to answer, so the request was stopped. Press Refresh to
+try again". Messages carry no trailing period because every section's template adds one.
+
+**Each section draws as soon as its own data arrives.** `initDashboard()` chains render onto each
+section's own promise rather than awaiting all feeds first. The "Refreshed" stamp, the Refresh
+button and one final `drawRespCharts()` (sections now finish in any order, so the page height
+can change after the charts were sized) wait for all four.
+
+Why, from 2026-11-19: the user's phone showed every section stuck on "Loading..." with the
+summary tiles at "—". The deployed page was byte-identical to the repo, parsed cleanly (also as
+old as a Safari 12 target), and loaded fully in about 5 s in headless Chromium against the live
+feeds, so the exact feed that stalled on the phone could not be identified. What the code did
+guarantee was that any one stalled feed blanked the whole page: `initDashboard()` waited on
+`Promise.allSettled` over every feed before drawing anything, and no request had a time limit.
+Measured on the day: a cold aggregate query on `ahfs-x44r` took 6.2 s (the 30 s limit leaves
+about five times that), and one `rdmq-nq56` request came back as an error page with no CORS
+header, which the browser reports as a failed request; a second try succeeds, hence the retry.
+Checked in headless Chromium with forced cases: Rt dataset never answering (other sections drew
+at 1 to 6 s, the Rt chip read the timeout at 30 s), WHO never answering, every feed never
+answering (all four messages at 30 s, Refresh re-enabled), the first request to every CDC and
+WHO URL dropped once (all data still shown), and NNDSS always 503 (message after one retry).
+
+Known limit: the respiratory section still waits for all three of its feeds, so a stalled Rt
+dataset holds back the ED and hospital blocks until its timeout (30 s per stage, three stages
+in the Rt chain). Drawing those blocks first and filling in Rt later would need a "pending"
+Rt state in `respRtStatus()`.
+
+---
+
 ## Working Style
 
 - Deliver complete files. Do not emit partial diffs or "add the following lines" instructions when a full file replacement is safer.

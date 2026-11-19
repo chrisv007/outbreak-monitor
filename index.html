@@ -1055,7 +1055,7 @@ footer a { color: var(--text-secondary); }
     <a href="https://github.com/globaldothealth/outbreak-data/tree/main/Ebola%20BVD" target="_blank">Global.health Ebola BVD 2026 line list</a> (CC BY 4.0) ·
     <a href="https://www.who.int/emergencies/disease-outbreak-news" target="_blank">WHO DON</a> ·
     For situational awareness only — not a clinical resource.
-    <div class="build-timestamp">Dashboard page last modified: 2026-11-16 08:01 AM CST</div>
+    <div class="build-timestamp">Dashboard page last modified: 2026-11-19 09:19 AM CST</div>
   </div>
 </footer>
 
@@ -1442,6 +1442,66 @@ let outbreakData = null;
 let whoData = null;
 
 // ════════════════════════════════════════════════════════
+//  SHARED: every feed request has a time limit
+// ════════════════════════════════════════════════════════
+// All network requests go through fetchFeed(). Browsers put no practical time
+// limit on a request, so before this a feed that stopped answering left its
+// section on a spinner indefinitely, and because the page also waited for every
+// feed before drawing anything, one stalled feed blanked the whole dashboard
+// (seen on a phone on 2026-11-19, while the same feeds answered in about five
+// seconds elsewhere). Now:
+//   • Each attempt is cut off after FEED_TIMEOUT_MS, body included (a response
+//     can start and then stall), and the section shows a plain message saying
+//     the source took too long. A cold aggregate query on the 3.7M-row Rt table
+//     measured 6.2 s, so 30 s leaves about five times that as headroom.
+//   • A request that fails outright (no connection, or a 5xx) is tried once
+//     more after a short pause. data.cdc.gov occasionally answers with an error
+//     page that carries no CORS header, which the browser reports as a failed
+//     request; one was seen during the 2026-11-19 checks and a second try
+//     succeeds. A timeout is not retried: the server is already slow, and a
+//     second wait would only double how long the section spins.
+const FEED_TIMEOUT_MS = 30000;
+const FEED_RETRY_DELAY_MS = 1500;
+
+async function fetchFeed(url, { as = 'json', cache = null, label = 'Data source' } = {}) {
+  for (let attempt = 1; ; attempt++) {
+    const controller = new AbortController();
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; controller.abort(); }, FEED_TIMEOUT_MS);
+    const init = { signal: controller.signal };
+    if (cache) init.cache = cache;
+    try {
+      let resp;
+      try {
+        resp = await fetch(url, init);
+      } catch (netErr) {
+        if (timedOut) throw netErr;
+        const err = new Error(`${label} could not be reached`);
+        err.retryable = true;
+        throw err;
+      }
+      if (!resp.ok) {
+        const err = new Error(`${label} returned ${resp.status}`);
+        err.retryable = resp.status >= 500;
+        throw err;
+      }
+      return as === 'text' ? await resp.text() : await resp.json();
+    } catch (err) {
+      if (timedOut) {
+        throw new Error(`${label} took longer than ${FEED_TIMEOUT_MS / 1000} seconds to answer, so the request was stopped. Press Refresh to try again`);
+      }
+      if (err && err.retryable && attempt < 2) {
+        await new Promise(resolve => setTimeout(resolve, FEED_RETRY_DELAY_MS));
+        continue;
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+}
+
+// ════════════════════════════════════════════════════════
 //  FETCH 1: CDC NNDSS
 // ════════════════════════════════════════════════════════
 async function fetchCDC() {
@@ -1449,11 +1509,9 @@ async function fetchCDC() {
   const prevYear = String(Number(currentYear) - 1);
   // No heuristic caching: an old max(week) answer would show a past week. Same
   // trap as the respiratory feeds (see socrataJSON).
-  const getJSON = async params => {
+  const getJSON = params => {
     const url = `https://data.cdc.gov/resource/x9gk-5huc.json?${new URLSearchParams(params).toString()}`;
-    const resp = await fetch(url, { cache: 'no-cache' });
-    if (!resp.ok) throw new Error(`CDC API ${resp.status}`);
-    return resp.json();
+    return fetchFeed(url, { cache: 'no-cache', label: 'CDC NNDSS' });
   };
 
   const weekData = await getJSON({
@@ -1590,9 +1648,7 @@ async function socrataJSON(datasetId, params) {
   // reuse an old response under heuristic caching. An old max(origin_date) or
   // max(week_end) answer would show a past week and could trip a false STALE
   // banner, so always go back to the server for these small queries.
-  const r = await fetch(url, { cache: 'no-cache' });
-  if (!r.ok) throw new Error(`data.cdc.gov/${datasetId} returned ${r.status}`);
-  return r.json();
+  return fetchFeed(url, { cache: 'no-cache', label: `data.cdc.gov/${datasetId}` });
 }
 
 // ── Burden: NSSP emergency department visit trajectories (rdmq-nq56) ──
@@ -1752,9 +1808,8 @@ async function fetchOutbreak(cfg) {
   // very next refresh. Same trap and same fix as the CDC feeds (see socrataJSON).
   // The server answers an unchanged file with a tiny 304, so this costs nothing
   // extra when the data has not moved. Do not remove it.
-  const r = await fetch(cfg.linelistUrl, { cache: 'no-cache' });
-  if (!r.ok) throw new Error(`Feed ${r.status}`);
-  const rows = parseCSV(await r.text());
+  const csvText = await fetchFeed(cfg.linelistUrl, { as: 'text', cache: 'no-cache', label: 'The outbreak line list' });
+  const rows = parseCSV(csvText);
 
   const val = (row, field) => (row && field ? (row[field] || '') : '').trim();
   // Status values are compared without accents or case ("à ventiler" == "a ventiler").
@@ -1873,9 +1928,7 @@ async function fetchWHO() {
   // Fix: request the 20 most-recent records in a single call by adding an
   // explicit $orderby=PublicationDateAndTime desc.  No pagination needed.
   const url = 'https://www.who.int/api/news/diseaseoutbreaknews?$top=20&$orderby=PublicationDateAndTime desc';
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error('WHO API ' + resp.status);
-  const data = await resp.json();
+  const data = await fetchFeed(url, { label: 'The WHO API' });
   return Array.isArray(data) ? data : (data.value || []);
 }
 
@@ -2907,7 +2960,7 @@ function renderGlobal(results) {
     if (result.status === 'fulfilled') {
       renderOutbreakData(cfg, result.value, i);
     } else {
-      $(`outbreakBody-${i}`).innerHTML = `<div class="error-block">⚠ ${result.reason?.message || 'Failed to load outbreak feed'}</div>`;
+      $(`outbreakBody-${i}`).innerHTML = `<div class="error-block">⚠ ${esc(result.reason?.message || 'Failed to load outbreak feed')}.</div>`;
     }
   });
 
@@ -3130,10 +3183,15 @@ function renderWHO(alerts) {
 // ════════════════════════════════════════════════════════
 //  MAIN INIT
 // ════════════════════════════════════════════════════════
+// Error text for a section's message. Never throws, even for an odd rejection
+// value, because a throw here would leave that section on its spinner.
+const errText = err => esc((err && err.message) || String(err || 'unknown error'));
+
 async function initDashboard() {
   const btn = $('refreshBtn');
   btn.classList.add('spinning');
   btn.disabled = true;
+  $('lastRefresh').textContent = 'Loading…';
 
   // Reset sections to loading state
   $('cdcSection').innerHTML = '<div class="loading-block"><div class="spinner"></div>Loading CDC NNDSS data…</div>';
@@ -3141,74 +3199,56 @@ async function initDashboard() {
   $('globalSection').innerHTML = '<div class="loading-block"><div class="spinner"></div>Loading outbreak linelist…</div>';
   $('whoSection').innerHTML = '<div class="loading-block"><div class="spinner"></div>Loading WHO alerts…</div>';
 
-  // Fetch all in parallel
-  const cdcPromise = fetchCDC();
-  // The three respiratory feeds are settled independently of each other so a
+  // Each section draws as soon as its own data arrives. The page used to wait
+  // for every feed to finish before drawing any section, so one slow or stalled
+  // feed left all four on spinners (reported from a phone on 2026-11-19). The
+  // sections share nothing except the summary bar, where each writes only its
+  // own tiles, so drawing them independently is safe. Every request has a time
+  // limit (fetchFeed), so each section always ends in data or a message.
+
+  // US NNDSS
+  const showCDC = fetchCDC()
+    .then(payload => renderCDC(processCDC(payload)))
+    .catch(err => {
+      $('cdcSection').innerHTML = `<div class="error-block">⚠ CDC data request failed: ${errText(err)}.</div>`;
+      $('sumTrendingUp').textContent = '—';
+      $('sumUsCases').textContent = '—';
+      if ($('cdcNote')) $('cdcNote').textContent = '';
+    });
+
+  // Respiratory. The three feeds are settled independently of each other so a
   // failure in any one leaves the other two rendering normally.
-  const respPromise = Promise.allSettled([fetchRespED(), fetchRespHosp(), fetchRespRt()]);
-  const outbreakPromises = FEATURED_OUTBREAKS.map(cfg => fetchOutbreak(cfg));
-  const whoPromise = fetchWHO();
+  const showResp = Promise.allSettled([fetchRespED(), fetchRespHosp(), fetchRespRt()])
+    .then(([edRes, hospRes, rtRes]) => renderResp(processResp(edRes, hospRes, rtRes)))
+    .catch(err => {
+      $('respSection').innerHTML = `<div class="error-block">⚠ Respiratory surveillance unavailable: ${errText(err)}</div>`;
+      if ($('respNote')) $('respNote').textContent = '';
+    });
 
-  const [cdcResult, respResult, ...outbreakResults] = await Promise.allSettled([
-    cdcPromise,
-    respPromise,
-    ...outbreakPromises,
-    whoPromise
-  ]);
-  const whoResult = outbreakResults.pop();
+  // Featured outbreak(s). renderGlobal handles a failed feed itself.
+  const showGlobal = Promise.allSettled(FEATURED_OUTBREAKS.map(cfg => fetchOutbreak(cfg)))
+    .then(results => renderGlobal(results))
+    .catch(err => {
+      $('globalSection').innerHTML = `<div class="error-block">⚠ Global outbreak data unavailable: ${errText(err)}</div>`;
+      $('sumOutbreakCases').textContent = '—';
+    });
 
-  // Render CDC
-  try {
-    if (cdcResult.status === 'fulfilled') {
-      const diseases = processCDC(cdcResult.value);
-      renderCDC(diseases);
-    } else {
-      throw cdcResult.reason;
-    }
-  } catch (err) {
-    $('cdcSection').innerHTML = `<div class="error-block">⚠ CDC data request failed: ${err.message}. Check the NNDSS API query and dataset availability.</div>`;
-    $('sumTrendingUp').textContent = '—';
-    $('sumUsCases').textContent = '—';
-    if ($('cdcNote')) $('cdcNote').textContent = '';
-  }
+  // WHO
+  const showWHO = fetchWHO()
+    .then(alerts => renderWHO(alerts))
+    .catch(err => {
+      $('whoSection').innerHTML = `<div class="error-block">⚠ WHO data unavailable: ${errText(err)}.</div>`;
+      $('sumWhoAlerts').textContent = '—';
+    });
 
-  // Render Respiratory
-  try {
-    const [edRes, hospRes, rtRes] = respResult.status === 'fulfilled'
-      ? respResult.value
-      : [{ status: 'rejected', reason: respResult.reason },
-         { status: 'rejected', reason: respResult.reason },
-         { status: 'rejected', reason: respResult.reason }];
-    renderResp(processResp(edRes, hospRes, rtRes));
-  } catch (err) {
-    $('respSection').innerHTML = `<div class="error-block">⚠ Respiratory surveillance unavailable: ${esc(err.message)}</div>`;
-    if ($('respNote')) $('respNote').textContent = '';
-  }
+  await Promise.allSettled([showCDC, showResp, showGlobal, showWHO]);
 
-  // Render Global
-  try {
-    renderGlobal(outbreakResults);
-  } catch (err) {
-    $('globalSection').innerHTML = `<div class="error-block">⚠ Global outbreak data unavailable: ${err.message}</div>`;
-    $('sumOutbreakCases').textContent = '—';
-  }
+  // Sections now finish in any order, so the page can change height after the
+  // respiratory charts were sized. Redraw them once at the final width. Guarded
+  // so a drawing fault can never leave the Refresh button disabled.
+  try { drawRespCharts(); } catch (e) { /* charts keep their first drawing */ }
 
-  // Render WHO
-  try {
-    if (whoResult.status === 'fulfilled') {
-      renderWHO(whoResult.value);
-    } else {
-      throw whoResult.reason;
-    }
-  } catch (err) {
-    $('whoSection').innerHTML = `<div class="error-block">⚠ WHO data unavailable: ${err.message}. The WHO API may be blocking cross-origin requests.</div>`;
-    $('sumWhoAlerts').textContent = '—';
-  }
-
-  // Update timestamps
-  const t = now();
-  $('lastRefresh').textContent = 'Refreshed ' + t;
-
+  $('lastRefresh').textContent = 'Refreshed ' + now();
   btn.classList.remove('spinning');
   btn.disabled = false;
 }
